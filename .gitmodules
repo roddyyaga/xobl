@@ -1,0 +1,3 @@
+[submodule "xproto"]
+	path = xproto
+	url = https://anongit.freedesktop.org/git/xcb/proto.git

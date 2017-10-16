@@ -18,7 +18,7 @@ type declaration =
   | `X_id_union of string * string list
   (* Union of X resource IDs *)
 
-  | `Enum of string (* * string list *)
+  | `Enum of string * (string * int) list
   (* Enumeration type, where default is 0 for the first
    * and one more than the previous for all the others *)
 
@@ -66,8 +66,8 @@ let print_declaration x =
         "X-id", name
     | `X_id_union (name, types) ->
         "X-id-union", name ^ " -> " ^ String.concat " | " types
-    | `Enum name ->
-        "enum", name
+    | `Enum (name, items) ->
+        "enum", name ^ " -> " ^ String.concat " | " (List.map (fun (name, n) -> name ^ "(" ^ string_of_int n ^ ")") items)
     | `Struct name ->
         "struct", name
     | `Event_struct name ->
@@ -135,7 +135,21 @@ let declaration_of_xml =
 
       | "enum" ->
           let name = get_attr "name" in
-          `Enum name
+          let rec loop acc last_value = function
+            | Xml.Element ("item", ["name", name], value) :: rst ->
+                let value = match value with
+                  | Xml.Element (_, [], [Xml.PCData value]) :: [] ->
+                      int_of_string value
+                  | [] -> last_value + 1
+                  | _ -> failwith "unrecognized element in Enum" in
+                loop ((name, value) :: acc) value rst
+            | Xml.Element ("doc", _, _) :: rst ->
+                loop acc last_value rst
+            | [] -> List.rev acc
+            | _ -> failwith "unrecognized element in Enum" in
+          let items = loop [] (-1) children in
+          `Enum (name, items)
+
       | "struct" ->
           let name = get_attr "name" in
           `Struct name

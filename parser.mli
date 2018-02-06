@@ -30,6 +30,7 @@ type expression =
   | `Pop_count of expression
   | `Sum_of of string * expression option
   | `List_element_ref
+    (* What is this??? *)
   | `Value of int
   | `Bit of int ]
 
@@ -141,8 +142,10 @@ type event =
 
 
 type enum =
-  { name : string
-  ; items : (string * case_type * int) list }
+  [ `Bitmask of (string * int) list * (string * int) list
+  (** The first list contains the "value" items, the second the "bit" items. *)
+  | `Enum of (string * int) list ]
+
 
 
 (* Base types and their mappings:
@@ -183,12 +186,22 @@ type declaration =
   (** Alias an error with a new error name and number. *)
 
   | `X_id_union of string * string list
-  (** Declare a union of X resource IDs. *)
+  (** Declare an union type of X resources, which should be valid XIDs. *)
 
-  | `Enum of enum
-  (** Enum like in C. By default the values start at 0 and increase by 1. *)
+  | `Enum of string * enum
+  (** Enum like in C. By default the values start at 0 and increase by 1.
+   * These are used both for bitmasks and enums that represent values.
+   * Straight enums are easy to handle: they're simply a mapping from a
+   * constant to an int.
+   * Bitmasks can have both "bit" and "value" items, where the bit items
+   * are the 0-based position of the bit in the bitmask (e.g. 0 -> 0b01,
+   * 1 -> 0b10, etc) and value items are useful predefined values (e.g.
+   * 0 -> empty, 15 -> all flags). *)
 
   | `Struct of x_struct
+  (**
+   *)
+
   | `Event_struct of event_struct
   | `Union of x_struct
   | `Request of request

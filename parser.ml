@@ -202,8 +202,7 @@ let field_type_of_xml = function
   | "required_start_align", attrs, [] ->
       `Required_start_align (required_start_align_of_xml attrs)
   | "doc", _, _ ->
-      `Doc
-      (* We do not handle documentation yet. *)
+      `Doc (* We do not handle documentation yet. *)
   | x, _, _ ->
       failwith (Printf.sprintf "not a field type: %s" x)
 
@@ -431,24 +430,29 @@ let event_of_xml attrs children =
 
 
 type enum =
-  { name : string
-  ; items : (string * case_type * int) list }
-[@@deriving show]
+  [ `Bitmask of (string * int) list * (string * int) list
+  | `Enum of (string * int) list ]
+  [@@deriving show]
 
-let rec enum_items_of_xml acc =
-  let open Xml in function
-  | [] -> acc
-  | Element ("item", ["name", name], [Element ("value" as t, [], [PCData v])]) :: rst
-  | Element ("item", ["name", name], [Element ("bit" as t, [], [PCData v])]) :: rst ->
-      enum_items_of_xml ((name, case_type_of_string' t, int_of_string v) :: acc) rst
-  | Element ("doc", _, _) :: rst ->
-      enum_items_of_xml acc rst
-  | Element (x, _, _) :: _ -> failwith (Printf.sprintf "not an enum: %s" x)
-  | _ -> failwith "ayy"
-
-let enum_of_xml name children : enum =
-  let items = enum_items_of_xml [] children in
-  { name; items }
+let enum_items_of_xml (c : Xml.xml list) : enum =
+  let open Xml in
+  let rec loop = function
+    | (v1, []), [] ->
+      `Enum v1
+    | (v1, v2), [] ->
+      `Bitmask (v1, v2)
+    | (a1, a2), (Element ("item", ["name", name], [Element ("value", [], [PCData v])])) :: rst ->
+      loop ((((name, int_of_string v) :: a1), a2), rst)
+    | (a1, a2), (Element ("item", ["name", name], [Element ("bit", [], [PCData v])])) :: rst ->
+      loop ((a1, ((name, int_of_string v) :: a2)), rst)
+    | acc, (Element ("doc", _, _) :: rst) ->
+      loop (acc, rst)
+    | _, (Element (x, _, _) :: _) ->
+      failwith (Printf.sprintf "not an enum item: %s" x)
+    | _ ->
+      failwith "invalid enum element"
+  in
+  loop (([], []), c)
 
 
 type declaration =
@@ -458,7 +462,7 @@ type declaration =
   | `Event_alias of string * (string * int)
   | `Error_alias of string * (string * int)
   | `X_id_union of string * string list
-  | `Enum of enum
+  | `Enum of string * enum
   | `Struct of x_struct
   | `Event_struct of event_struct
   | `Union of x_struct
@@ -496,7 +500,7 @@ let declaration_of_xml =
       `X_id_union (id, types)
 
   | "enum", ["name", name], children ->
-      `Enum (enum_of_xml name children)
+      `Enum (name, enum_items_of_xml children)
 
   | "typedef", ["oldname", old_name; "newname", new_name], []
   | "typedef", ["newname", new_name; "oldname", old_name], [] ->
@@ -619,7 +623,8 @@ let () =
         let (info, decls) = extension_of_xml file in
         Printf.printf "%s: %s %s %B\n" info.file info.name info.xname info.multiword;
         decls in
-  (* List.iter (fun x -> Format.printf "%s\n" @@ show_declaration x) decls;*)
+    List.iter (function `Enum (name, en) -> Format.printf "%s\n" (show_enum en) | _ -> ()) decls;
+    (* List.iter (fun x -> Format.printf "%s\n" @@ show_declaration x) decls;*)
     ())
     (List.tl (Array.to_list Sys.argv))
 

@@ -1,0 +1,11 @@
+(jbuild_version 1)
+
+(executable
+ ((name parser)
+  (libraries (xml-light oUnit))
+  (preprocess (pps (ppx_deriving.std)))))
+
+(alias
+ ((name runtest)
+  (deps (parser.exe (glob_files xproto/src/*.xml)))
+  (action (run ${<}))))

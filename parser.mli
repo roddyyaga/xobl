@@ -11,14 +11,14 @@ type padding =
   ; serialize : bool }
 
 
-(** Something to do with an alignment checker. Should probably check out this
+(* Something to do with an alignment checker. Should probably check out this
  * thread: https://lists.freedesktop.org/archives/xcb/2015-November/010557.html
  * The author of XEB is confused as to what this exactly is. XCB-types just
  * parses it into an "Alignment" type without giving an explaination and
  * without ever using it in XHB.
  * Most other bindings just ignore it.
  * I think we can safely conclude that nobody except whoever sent the patch
- * knows what this is  for. *)
+ * to add it knows what this is for. *)
 type required_start_align =
   { align  : int
   ; offset : int option }
@@ -55,8 +55,18 @@ type expression =
 
 
 type allowed_val =
-  [ `Enum | `Alt_enum
-  | `Mask | `Alt_mask ]
+  [ `Enum
+  | `Mask
+  | `Alt_enum
+  | `Alt_mask
+  (* The documentation for these says that the values that these enums and
+   * masks constrain may be within the range of the enum/mask, "but they need
+   * not be". What the flying fuck does that even mean?
+   * After looking at the spec files for a while, I think I have a vague idea.
+   * The enums referenced provide some useful constants that have a special
+   * meaning, such as "no window" being 0. That being said, this is a terrible
+   * way to put it. *)
+  ]
 
 
 type 'a field_t =
@@ -86,10 +96,10 @@ type field_type =
 type case_type =
   [ `Bit
   (** In a switch, the contained fields are included if
-    * switch expression & bitcase expression != 0 *)
+   * switch expression & bitcase expression != 0 *)
   | `Int
   (** In a switch, the contained fields are included if
-    * switch expression == case expression *)
+   * switch expression == case expression *)
   ]
 
 (** A field that uses an expression to determine which fields are included in
@@ -152,8 +162,7 @@ type error =
   ; fields : field_type list }
 
 
-(** A 32-bit struct with some predefined fields.
- * *)
+(** A 32-bit struct. *)
 type event =
   { name : string
   ; code : int
@@ -166,15 +175,13 @@ type event =
   ; doc    : doc option }
 
 
-(** The enumerator item's name and its value. *)
 type enum_item = string * int
 
 type enum_bitmask =
   { bits : enum_item list
   ; vals : enum_item list }
 
-(** Enum like in C. By default the values start at 0 and increase by 1.
- * These are used both for bitmasks and enums that represent values. *)
+(** Used both for bitmasks and enums that represent values. *)
 type enum =
   [ `Bitmask of enum_bitmask
   (** Bitmasks are can have both "bit" and "value" items, where the bit items
@@ -204,8 +211,8 @@ type declaration =
   [ `Import of string
   (** Let an extension reference the types declared in another extension.
    * The string is the same as the "name" field of the extension info of the
-   * referenced module.
-   * The documentation states that types from xproto are implicitly imported,
+   * referenced module. *)
+  (* The documentation states that types from xproto are implicitly imported,
    * but import declarations for xproto are still present in most of the
    * extensions, and the release notes for 1.0RC2 mention that the code
    * generator stopped importing xproto implicitly.
@@ -234,11 +241,12 @@ type declaration =
   (* Generic events should be handled differently from normal ones.
    * Dunno how exactly. *)
 
+  | `Error of error
+
   | `Struct of x_struct
   | `Event_struct of event_struct
   | `Union of x_struct
   | `Request of request
-  | `Error of error
   ]
 
 
@@ -247,21 +255,21 @@ type declaration =
  * specification. *)
 type extension_info =
   { file : string
-  (* The filename of the extension's XML description file. *)
+  (** The filename of the extension's XML description file. *)
 
   ; name : string
-  (* The extension name in camelcase. *)
+  (** The extension name in camelcase. *)
 
   ; xname : string
-  (* Name used by QueryExtension whether the extension is supported on a
+  (** Name used by QueryExtension whether the extension is supported on a
    * given server. *)
 
   ; multiword : bool
-  (* Whether the resulting C function name prefixes should be composed of
-   * a single alphanumeric string, or multiple strings separated by _.
-   * I'm nor sure why they added this flag instead of just using an
+  (** Whether the resulting C function name prefixes should be composed of
+   * a single alphanumeric string, or multiple strings separated by _. *)
+  (* I'm nor sure why they added this flag instead of just using an
    * attribute to define the exact C name prefix. *)
 
   ; version : int * int
-  (* major * minor version *)
+  (** major * minor version. *)
   }

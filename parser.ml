@@ -254,15 +254,11 @@ let field_type_of_xml' = function
 
 
 type case_type = [ `Bit | `Int ]
-[@@deriving show]
+  [@@deriving show]
 
 let case_type_of_string = function
   | "bitcase" ->  `Bit
   | "case" -> `Int
-  | _ -> failwith "not a case type"
-
-let case_type_of_string' = function
-  | "value" -> `Int | "bit" -> `Bit
   | _ -> failwith "not a case type"
 
 
@@ -541,6 +537,7 @@ let enum_items_of_xml items =
       failwith "invalid enum element"
   in
   let v1, v2, doc = parse_items ([], []) items in
+  let v1, v2 = List.rev v1, List.rev v2 in
   match v2 with
   | [] -> `Enum v1, doc
   | v2 -> `Bitmask { bits = v2; vals = v1 }, doc
@@ -578,34 +575,34 @@ let declaration_of_xml =
   function PCData _ -> raise failure | Element x ->
   match x with
   | "import", [], [PCData file] ->
-      `Import file
+    `Import file
 
   | "xidtype", ["name", id], [] ->
-      `X_id id
+    `X_id id
 
   | "xidunion", ["name", id], children ->
-      let get_type = function
-        | Element ("type", [], [PCData name]) -> name
-        | _ -> failwith "unrecognized element in X_id_union" in
-      let types = List.map get_type children in
-      `X_id_union (id, types)
+    let get_type = function
+      | Element ("type", [], [PCData name]) -> name
+      | _ -> failwith "unrecognized element in X_id_union" in
+    let types = List.map get_type children in
+    `X_id_union (id, types)
 
   | "enum", ["name", name], children ->
-      let items, doc = enum_items_of_xml children in
-      `Enum (name, items, doc)
+    let items, doc = enum_items_of_xml children in
+    `Enum (name, items, doc)
 
   | "typedef", ["oldname", old_name; "newname", new_name], []
   | "typedef", ["newname", new_name; "oldname", old_name], [] ->
-      `Type_alias (old_name, new_name)
+    `Type_alias (old_name, new_name)
 
   | "union", ["name", name], children ->
-      `Union (struct_of_xml name children)
+    `Union (struct_of_xml name children)
 
   | "struct", ["name", name], children ->
-      `Struct (struct_of_xml name children)
+    `Struct (struct_of_xml name children)
 
   | "eventstruct", ["name", name], children ->
-      `Event_struct (event_struct_of_xml name children)
+    `Event_struct (event_struct_of_xml name children)
 
   | "event", attrs, children ->
     let is_generic = match List.assoc_opt "xge" attrs with
@@ -616,27 +613,27 @@ let declaration_of_xml =
       `Event (event_of_xml attrs children)
 
   | "error", attrs, children ->
-      `Error (error_of_xml attrs children)
+    `Error (error_of_xml attrs children)
 
   | "eventcopy", attrs, [] ->
-      let get_attr x = List.assoc x attrs in
-      let new_name = get_attr "name" in
-      let old_name = get_attr "ref" in
-      let number = int_of_string @@ get_attr "number" in
-      `Event_alias (old_name, (new_name, number))
+    let get_attr x = List.assoc x attrs in
+    let new_name = get_attr "name" in
+    let old_name = get_attr "ref" in
+    let number = int_of_string @@ get_attr "number" in
+    `Event_alias (old_name, (new_name, number))
 
   | "errorcopy", attrs, [] ->
-      let get_attr x = List.assoc x attrs in
-      let new_name = get_attr "name" in
-      let old_name = get_attr "ref" in
-      let number = int_of_string @@ get_attr "number" in
-      `Error_alias (old_name, (new_name, number))
+    let get_attr x = List.assoc x attrs in
+    let new_name = get_attr "name" in
+    let old_name = get_attr "ref" in
+    let number = int_of_string @@ get_attr "number" in
+    `Error_alias (old_name, (new_name, number))
 
   | "request", attrs, children ->
-      `Request (request_of_xml attrs children)
+    `Request (request_of_xml attrs children)
 
   | _ ->
-      raise failure
+    raise failure
 
 
 let extension_of_xml =
@@ -675,15 +672,16 @@ let is_xproto = function
 
 
 let () =
-  List.iter (fun file ->
-    let file = Xml.parse_file file in
+  List.iter (fun f ->
+    let file = Xml.parse_file f in
+    print_string (f ^ ":");
     let _ =
       if is_xproto file then
         xproto file
       else
         let (info, decls) = extension_of_xml file in
-        Printf.printf "%s: %s %s %B\n" info.file info.name info.xname info.multiword;
         decls in
+    print_endline " OK";
     (* List.iter (function `Event ev -> Format.printf "%s\n" (show_event ev) | _ -> ()) decls; *)
     (* List.iter (fun x -> Format.printf "%s\n" @@ show_declaration x) decls;*)
     ())

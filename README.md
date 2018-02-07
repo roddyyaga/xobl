@@ -12,3 +12,6 @@ Not nearly done.
 * https://github.com/sidorares/node-x11
 * https://github.com/noodlewiz/xcljb
 * https://github.com/ch11ng/xelb
+* https://github.com/chrys-h/XEB
+* https://github.com/aslatter/xcb-types
+* https://github.com/aslatter/xhb

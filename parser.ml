@@ -6,6 +6,23 @@ let option_app f = function
   | Some a -> Some (f a) | None -> None
 
 
+let one_attr_opt name = function
+  | (n, v) :: [] -> if n = name then Some v else None
+  | _ -> None
+
+
+let one_attr name = function
+  | (n, v) :: [] ->
+    if n = name then
+      v
+    else
+      failwith ("Expected " ^ name ^ ", got: " ^ n)
+  | _ :: _ ->
+    failwith "Expected one attribute, got > 1"
+  | [] ->
+    failwith "Expected one attribute, got none"
+
+
 
 (* Padding bytes in a packet  *)
 type pad_type =
@@ -70,9 +87,9 @@ type expression =
   | `Field_ref of string
   | `Param_ref of string * string
   | `Enum_ref of string * string
-  | `Pop_count of expression
+  | `Population_count of expression
   | `Sum_of of string * expression option
-  | `List_element_ref
+  | `Current_ref
   | `Value of int
   | `Bit of int ]
 [@@deriving show]
@@ -91,23 +108,23 @@ let rec expression_of_xml =
   | "enumref", ["ref", typ], [PCData ref] ->
       `Enum_ref (typ, ref)
   | "popcount", [], [Element expr] ->
-      `Pop_count (expression_of_xml expr)
+      `Population_count (expression_of_xml expr)
   | "sumof", ["ref", ref], [Element expr] ->
       `Sum_of (ref, Some (expression_of_xml expr))
   | "sumof", ["ref", ref], [] ->
       `Sum_of (ref, None)
   | "listelement-ref", [], [] ->
-      `List_element_ref
+      `Current_ref
   | "value", [], [PCData v] ->
       `Value (int_of_string v)
   | "bit", [], [PCData v] ->
-      `Value (int_of_string v)
-  | _ ->
-      failwith "not an expression"
+      `Bit (int_of_string v)
+  | n, _, _ ->
+      failwith ("not an expression: " ^ n)
 
 
 (*  *)
-type allowed_vals =
+type allowed_val =
   [ `Enum | `Alt_enum
   | `Mask | `Alt_mask ]
 [@@deriving show]
@@ -120,13 +137,14 @@ let allowed_val_type_of_string = function
   | x -> failwith (Printf.sprintf "not a var_attr: %s" x)
 
 
-type field =
-  { name : string
-  ; typ  : string
-  ; allowed : (allowed_vals * string) option }
-[@@deriving show]
+type 'a field_t =
+  { name    : string
+  ; typ     : string
+  ; allowed : (allowed_val * string) option
+  ; value   : 'a }
+  [@@deriving show]
 
-let field_of_xml attrs =
+let field_t_of_xml value attrs =
   let name, typ, allowed =
     let rec loop =
       function
@@ -134,8 +152,8 @@ let field_of_xml attrs =
           loop ((Some name, t, a), rst)
       | (n, None, a), ("type", typ) :: rst ->
           loop ((n, Some typ, a), rst)
-      | (n, t, None), ("enum" as name, enum) :: rst
-      | (n, t, None), ("mask" as name, enum) :: rst
+      | (n, t, None), ("enum"    as name, enum) :: rst
+      | (n, t, None), ("mask"    as name, enum) :: rst
       | (n, t, None), ("altenum" as name, enum) :: rst
       | (n, t, None), ("altmask" as name, enum) :: rst ->
           let typ = allowed_val_type_of_string name in
@@ -145,50 +163,46 @@ let field_of_xml attrs =
       | _ ->
           failwith "not a field" in
     loop ((None, None, None), attrs) in
-  { name; typ; allowed }
+  { name; typ; allowed; value }
 
 
-type expr_field =
-  { name : string
-  ; typ  : string
-  ; allowed : (allowed_vals * string) option
-  ; children : expression list }
-[@@deriving show]
+type field = unit field_t
+  [@@deriving show]
 
-let field_expr_of_xml = function
+let field_of_xml = field_t_of_xml ()
+
+
+type expr_field = (expression list) field_t
+  [@@ deriving show]
+
+let expr_field_of_xml = function
   | "exprfield", attrs, children ->
-      let { name; typ; allowed } : field = field_of_xml attrs in
-      let children = children |> List.map (function
+      let value = children |> List.map (function
         | Xml.Element el -> expression_of_xml el
         | _ -> failwith "not an exprfield") in
-      { name; typ; allowed; children }
+      field_t_of_xml value attrs
   | _ -> failwith "not an exprfield"
 
 
-type list_var =
-  { name : string
-  ; typ  : string
-  ; allowed : (allowed_vals * string) option
-  ; children : expression option }
-[@@deriving show]
+type list_field = (expression option) field_t
+  [@@deriving show]
 
-let list_var_of_xml attrs children =
-  let { name; typ; allowed } : field = field_of_xml attrs in
-  let children = match children with
+let list_field_of_xml attrs children =
+  let value = match children with
     | [Xml.Element el] -> Some (expression_of_xml el)
     | [] -> None
-    | _ -> failwith "not an exprfield" in
-  { name; typ; allowed; children }
+    | _ -> failwith "not a list field" in
+  field_t_of_xml value attrs
 
 
 type field_type =
   [ `Fd of string
   | `Pad of padding
   | `Field of field
-  | `List of list_var
+  | `List of list_field
   | `Required_start_align of required_start_align
   | `Doc ]
-[@@deriving show]
+  [@@deriving show]
 
 let field_type_of_xml = function
   | "fd", ["name", name], [] ->
@@ -198,7 +212,7 @@ let field_type_of_xml = function
   | "field", attrs, [] ->
       `Field (field_of_xml attrs)
   | "list", attrs, children ->
-      `List (list_var_of_xml attrs children)
+      `List (list_field_of_xml attrs children)
   | "required_start_align", attrs, [] ->
       `Required_start_align (required_start_align_of_xml attrs)
   | "doc", _, _ ->
@@ -220,61 +234,76 @@ let case_type_of_string' = function
   | _ -> failwith "not a case type"
 
 
-type case =
-  { typ : case_type
-  ; expressions : expression list
-  ; fields : field_type list
-  ; switches : switch list
-  ; name_ : string option }
-[@@deriving show]
-
-and switch =
+type switch =
   { name : string
   ; expr : expression
   ; align : required_start_align option
   ; cases : case list }
-[@@deriving show]
+  [@@deriving show]
 
-let rec case_of_xml (typ, name, children) =
+and case =
+  { typ : case_type
+  ; name_c : string option
+  ; expr_c : expression
+  ; align_c : required_start_align option
+  ; fields : field_type list
+  ; switch : switch option }
+  [@@deriving show]
+
+let rec case_of_xml (typ, name_c, children) =
+  let rec loop fields = function
+    | Xml.Element ("switch", ["name", name], children) :: [] ->
+      let switch = switch_of_xml name children in
+      fields, Some switch
+    | Xml.Element ("switch", _, _) :: [] ->
+      failwith "switch not in tail position"
+    | [] ->
+      fields, None
+    | Xml.Element f :: rst ->
+      let field = field_type_of_xml f in
+      loop (field :: fields) rst
+    | _ ->
+      failwith "invalid case field"
+  in
   let typ = case_type_of_string typ in
-  let rec loop = function
-    | (e, f, s), [] -> e, f, s
-    | (e, f, s), Xml.Element ("switch", ["name", name], children) :: rst ->
-        let switch = switch_of_xml name children in
-        loop ((e, f, switch :: s), rst)
-    | (e, f, s), Xml.Element x :: rst ->
-        let e, f =
-          try expression_of_xml x :: e, f
-          with Failure _ -> e, field_type_of_xml x :: f in
-        loop ((e, f, s), rst)
-    | _ -> failwith "not a case" in
-  let name_ = match name with
-    | ("name", name) :: [] -> Some name
-    | [] -> None
-    | _ -> failwith "not a case: invalid attribute" in
-  let expressions, fields, switches =
-    loop (([], [], []), children) |> fun (e, f, s) ->
-      List.rev e, List.rev f, List.rev s in
-  { typ; expressions; fields; switches; name_ }
+  let name_c = one_attr_opt "name" name_c in
+  let expr_c, align_c, children = match children with
+    | Xml.Element x :: Xml.Element ("required_start_align", a, []) :: rst ->
+      let align = required_start_align_of_xml a in
+      x, Some align, rst
+    | Xml.Element _ :: [] ->
+      failwith "invalid switch: missing fields"
+    | Xml.Element x :: rst ->
+      x, None, rst
+    | _ ->
+      failwith "invalid switch"
+  in
+  let expr_c = expression_of_xml expr_c in
+  let fields, switch = loop [] children in
+  { typ; name_c; expr_c; align_c; fields; switch }
+
 
 and switch_of_xml name children =
-  let rec loop = function
-    | (Some expr, align, cases), [] ->
-        expr, align, cases
-    | (e, a, cases), Xml.Element (("bitcase", _, _) as b) :: rst
-    | (e, a, cases), Xml.Element (("case", _ , _) as b) :: rst ->
-        loop ((e, a, case_of_xml b :: cases), rst)
-    | (e, None, c), Xml.Element ("required_start_align", attrs, []) :: rst ->
-        let align = required_start_align_of_xml attrs in
-        loop ((e, Some align, c), rst)
-    | (None, a, c), Xml.Element x :: rst ->
-        let expr = expression_of_xml x in
-        loop ((Some expr, a, c), rst)
-    | (expr, align, _), ls ->
-        failwith "not a switch" in
-  let expr, align, cases =
-    let (e, a, c) = loop ((None, None, []), children) in
-    e, a, List.rev c in
+  let parse_case = function
+    | Xml.Element (("bitcase", _, _) as c)
+    | Xml.Element (("case", _, _)    as c) ->
+      case_of_xml c
+    | _ ->
+      failwith "invalid switch case element"
+  in
+  let expr, align, children = match children with
+    | Xml.Element x :: Xml.Element ("required_start_align", a, []) :: rst ->
+      let align = required_start_align_of_xml a in
+      x, Some align, rst
+    | Xml.Element _ :: [] ->
+      failwith "invalid switch: missing fields"
+    | Xml.Element x :: rst ->
+      x, None, rst
+    | _ ->
+      failwith "invalid switch"
+  in
+  let expr = expression_of_xml expr in
+  let cases = List.map parse_case children in
   { name; expr; align; cases }
 
 
@@ -382,7 +411,7 @@ let request_of_xml attrs children =
       | ((f, s), r), Xml.Element x :: rst ->
           let field =
             try `Field (field_type_of_xml x)
-            with _ -> `Expr_field (field_expr_of_xml x) in
+            with _ -> `Expr_field (expr_field_of_xml x) in
           loop (((field :: f, s), r), rst)
       | _ -> failwith "not a request" in
     let (f, s), r = loop ((([], None), None), children) in
@@ -409,7 +438,7 @@ let error_of_xml attrs children =
 
 type event =
   { name : string
-  ; number : int
+  ; code : int
   ; no_sequence_number : bool
   ; xge : bool
   ; fields : field_type list }
@@ -419,18 +448,22 @@ let event_of_xml attrs children =
   let get_attr x = List.assoc x attrs in
   let get_attr_opt x = List.assoc_opt x attrs in
   let name = get_attr "name" in
-  let number = int_of_string @@ get_attr "number" in
+  let code = int_of_string @@ get_attr "number" in
   let no_sequence_number = app_with_default bool_of_string false
     @@ get_attr_opt "no-sequence-number" in
   let xge = app_with_default bool_of_string false @@ get_attr_opt "xge" in
   let fields = children |> List.map (function
     | Xml.Element els -> field_type_of_xml els
     | _ -> failwith "not an error") in
-  { name; number; no_sequence_number; xge; fields }
+  { name; code; no_sequence_number; xge; fields }
 
+
+type enum_bitmask =
+  { bits : (string * int) list; vals : (string * int) list }
+  [@@deriving show]
 
 type enum =
-  [ `Bitmask of (string * int) list * (string * int) list
+  [ `Bitmask of enum_bitmask
   | `Enum of (string * int) list ]
   [@@deriving show]
 
@@ -440,7 +473,7 @@ let enum_items_of_xml (c : Xml.xml list) : enum =
     | (v1, []), [] ->
       `Enum v1
     | (v1, v2), [] ->
-      `Bitmask (v1, v2)
+      `Bitmask { bits = v2; vals = v1 }
     | (a1, a2), (Element ("item", ["name", name], [Element ("value", [], [PCData v])])) :: rst ->
       loop ((((name, int_of_string v) :: a1), a2), rst)
     | (a1, a2), (Element ("item", ["name", name], [Element ("bit", [], [PCData v])])) :: rst ->
@@ -468,9 +501,8 @@ type declaration =
   | `Union of x_struct
   | `Request of request
   | `Event of event
-  | `Error of error
-  ]
-[@@deriving show]
+  | `Error of error ]
+  [@@deriving show]
 
 
 type extension_info =
@@ -623,7 +655,7 @@ let () =
         let (info, decls) = extension_of_xml file in
         Printf.printf "%s: %s %s %B\n" info.file info.name info.xname info.multiword;
         decls in
-    List.iter (function `Enum (name, en) -> Format.printf "%s\n" (show_enum en) | _ -> ()) decls;
+    (* List.iter (function `Event ev -> Format.printf "%s\n" (show_event ev) | _ -> ()) decls; *)
     (* List.iter (fun x -> Format.printf "%s\n" @@ show_declaration x) decls;*)
     ())
     (List.tl (Array.to_list Sys.argv))

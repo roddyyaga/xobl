@@ -27,6 +27,23 @@ let one_attr name = function
     failwith "Expected one attribute, got none"
 
 
+let get_bool_attr name attrs = match List.assoc_opt name attrs with
+  | Some x -> bool_of_string x | None -> false
+
+
+let rec list_extract f = function
+  | [] -> None, []
+  | x :: rest ->
+    match f x with
+    | Some x ->
+      Some x, rest
+    | None ->
+      (* Not tail-recursive, but eh *)
+      let found, ls = list_extract f rest in
+      found, x :: ls
+
+
+
 
 (* Padding bytes in a packet  *)
 type pad_type =
@@ -58,6 +75,14 @@ let required_start_align_of_xml attrs =
   let align = int_of_string @@ List.assoc "align" attrs in
   let offset = option_app int_of_string @@ List.assoc_opt "offset" attrs in
   { align; offset }
+
+
+let consume_align children = match children with
+  | Xml.Element ("required_start_align", align, []) :: rest ->
+    let align = required_start_align_of_xml align in
+    Some align, rest
+  | _ ->
+    None, children
 
 
 type op =
@@ -179,13 +204,13 @@ let field_of_xml = field_t_of_xml ()
 type expr_field = (expression list) field_t
   [@@ deriving show]
 
-let expr_field_of_xml = function
-  | "exprfield", attrs, children ->
-      let value = children |> List.map (function
-        | Xml.Element el -> expression_of_xml el
-        | _ -> failwith "not an exprfield") in
-      field_t_of_xml value attrs
-  | _ -> failwith "not an exprfield"
+let expr_field_of_xml attrs children =
+  let mk_expr = function
+    | Xml.Element el -> expression_of_xml el
+    | _ -> failwith "invalid exprfield"
+  in
+  let value = List.map mk_expr children in
+  field_t_of_xml value attrs
 
 
 type list_field = (expression option) field_t
@@ -204,8 +229,7 @@ type field_type =
   | `Pad of padding
   | `Field of field
   | `List of list_field
-  | `Required_start_align of required_start_align
-  | `Doc of doc ]
+  | `Expr of expr_field ]
   [@@deriving show]
 
 let field_type_of_xml = function
@@ -217,10 +241,8 @@ let field_type_of_xml = function
       `Field (field_of_xml attrs)
   | "list", attrs, children ->
       `List (list_field_of_xml attrs children)
-  | "required_start_align", attrs, [] ->
-      `Required_start_align (required_start_align_of_xml attrs)
-  | "doc", _, _ ->
-      `Doc "FIXME"
+  | "exprfield", attrs, children ->
+      `Expr (expr_field_of_xml attrs children)
   | x, _, _ ->
       failwith (Printf.sprintf "not a field type: %s" x)
 
@@ -376,105 +398,112 @@ let event_struct_of_xml name children =
   { name; allowed }
 
 
-type struct_contents =
-  { fields : field_type list
-  ; switch : switch option }
-[@@deriving show]
-
-let struct_contents_of_xml children =
-  let rec loop = function
-    | (fields, switch), [] ->
-        fields, switch
-    | (f, None), Xml.Element ("switch", ["name", name], children) :: rst ->
-        loop ((f, Some (switch_of_xml name children)), rst)
-    | (f, s), Xml.Element x :: rst ->
-        loop ((field_type_of_xml x :: f, s), rst)
-    | _ -> failwith "not a struct" in
-  let fields, switch =
-    let (f, s) = loop (([], None), children) in
-    List.rev f, s in
-  { fields; switch }
-
-
-type field_or_expr_field =
-  [ `Field of field_type
-  | `Expr_field of expr_field ]
-[@@deriving show]
-
-type request_children =
-  { fields : field_or_expr_field list
-  ; switch : switch option }
-[@@deriving show]
+type request_struct =
+  { align  : required_start_align option
+  ; fields : field_type list
+  ; switch : switch option
+  ; doc    : doc option }
+  [@@deriving show]
 
 type request =
   { name : string
   ; opcode : int
   ; combine_adjacent : bool
-  ; children : request_children
-  ; reply : struct_contents option }
-[@@deriving show]
+  ; params : request_struct
+  ; reply : request_struct option }
+  [@@deriving show]
 
+(* TODO we need to account for the presence of a <doc> element in tail
+ * position as well *)
 let request_of_xml attrs children =
-  let get_attr x = List.assoc x attrs in
-  let name = get_attr "name" in
-  let opcode = int_of_string @@ get_attr "opcode" in
-  let combine_adjacent = app_with_default bool_of_string false
-    @@ List.assoc_opt "combine-adjacent" attrs in
-  let children, reply =
-    let rec loop = function
-      | (c, r), [] -> c, r
-      | (c, None), Xml.Element ("reply", [], children) :: rst ->
-          loop ((c, Some (struct_contents_of_xml children)), rst)
-      | ((f, None), r), Xml.Element ("switch", ["name", name], children) :: rst ->
-          loop (((f, Some (switch_of_xml name children)), r), rst)
-      | ((f, s), r), Xml.Element x :: rst ->
-          let field =
-            try `Field (field_type_of_xml x)
-            with _ -> `Expr_field (expr_field_of_xml x) in
-          loop (((field :: f, s), r), rst)
-      | _ -> failwith "not a request" in
-    let (f, s), r = loop ((([], None), None), children) in
-    { fields = List.rev f; switch = s }, r in
-  { name; opcode; combine_adjacent; children; reply }
+  (* Parse fields until we hit a switch. *)
+  let rec parse_reply reply = function
+    | [] ->
+      { reply with fields = List.rev reply.fields }
+    | Xml.Element ("switch", ["name", name], s) :: rest ->
+      let switch = switch_of_xml name s in
+      parse_reply { reply with switch = Some switch } rest
+    | Xml.Element ("doc", [], d) :: rest ->
+      let doc = "FIXME" in
+      parse_reply { reply with doc = Some doc } rest
+    | Xml.Element f :: rest ->
+      let f = field_type_of_xml f in
+      let acc = { reply with fields = f :: reply.fields } in
+      parse_reply acc rest
+    | _ ->
+      failwith "invalid request reply: invalid element"
+  in
+  let reply_of_xml children =
+    let align, children = consume_align children in
+    parse_reply { align; fields = []; switch = None; doc = None } children
+  in
+  (* Parse fields until we hit a reply, a switch, or both. *)
+  let rec parse_req (req, reply) = function
+    | [] ->
+      let req = { req with fields = List.rev req.fields } in
+      req, reply
+    | Xml.Element ("reply", [], children) :: rest ->
+      let reply = reply_of_xml children in
+      parse_req (req, Some reply) rest
+    | Xml.Element ("switch", ["name", name], s) :: rest ->
+      let switch = switch_of_xml name s in
+      let acc = { req with switch = Some switch }, reply in
+      parse_req acc rest
+    | Xml.Element ("doc", [], d) :: rest ->
+      let doc = "FIXME" in
+      parse_req ({ req with doc = Some doc }, reply) rest
+    | Xml.Element f :: rest ->
+      let f = field_type_of_xml f in
+      let acc = { req with fields = f :: req.fields }, reply in
+      parse_req acc rest
+    | _ ->
+      failwith "invalid request: invalid element"
+  in
+  let name = List.assoc "name" attrs in
+  let opcode = int_of_string @@ List.assoc "opcode" attrs in
+  let combine_adjacent = get_bool_attr "combine-adjacent" attrs in
+  let align, children = consume_align children in
+  let params, reply =
+    parse_req ({ align; fields = []; switch = None; doc = None }, None) children
+  in
+  { name; opcode; combine_adjacent; params; reply }
 
 
 type error =
   { name : string
   ; number : int
+  ; align : required_start_align option
   ; fields : field_type list }
-[@@deriving show]
+  [@@deriving show]
 
 let error_of_xml attrs children =
   let name = List.assoc "name" attrs in
   let number = int_of_string @@ List.assoc "number" attrs in
+  let align, children = consume_align children in
   let fields = List.map field_type_of_xml' children in
-  { name; number; fields }
-
+  { name; number; align; fields }
 
 
 type event =
-  { name : string
-  ; code : int
+  { name   : string
+  ; code   : int
   ; no_sequence_number : bool
-  ; align : required_start_align option
-  ; fields : field_type list }
+  ; align  : required_start_align option
+  ; fields : field_type list
+  ; doc    : doc option}
   [@@deriving show]
 
 let event_of_xml attrs children =
   let name = List.assoc "name" attrs in
   let code = int_of_string @@ List.assoc "number" attrs in
-  let no_sequence_number = match List.assoc_opt "no-sequence-number" attrs with
-    | Some x -> bool_of_string x | None -> false
-  in
-  let align, children = match children with
-    | Xml.Element ("required_start_align", align, []) :: rst ->
-      let align = required_start_align_of_xml align in
-      Some align, rst
-    | _ ->
-      None, children
+  let no_sequence_number = get_bool_attr "no-sequence-number" attrs in
+  let align, children = consume_align children in
+  let doc, children = list_extract (function
+    | Xml.Element ("doc", _, _) -> Some "FIXME"
+    | _ -> None) children
   in
   let fields = List.map field_type_of_xml' children in
-  { name; code; no_sequence_number; align; fields }
+  { name; code; no_sequence_number; align; fields; doc }
 
 
 (*
@@ -504,7 +533,7 @@ let enum_items_of_xml items =
     | Element ("item", ["name", name], [Element ("bit",   [], [PCData v])]) :: rest ->
       let v2 = (name, int_of_string v) :: v2 in
       parse_items (v1, v2) rest
-    | Element ("doc", _, _) :: [] ->
+    | Element ("doc", [], _) :: [] ->
       v1, v2, Some "FIXME"
     | Element ("doc", _, _) :: _ ->
       failwith "invalid enum: doc item not in tail position"

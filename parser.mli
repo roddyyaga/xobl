@@ -78,8 +78,9 @@ type field_type =
   | `Pad of padding
   | `Field of field
   | `List of list_field
-  | `Required_start_align of required_start_align
-  | `Doc of doc ]
+  | `Expr of expr_field
+  (** This should only be used in a request struct description. *)
+  ]
 
 
 type case_type =
@@ -130,41 +131,24 @@ type event_struct =
   ; allowed : event_type_selector list }
 
 
-type field_or_expr_field =
-  [ `Field of field_type
-  | `Expr_field of expr_field ]
-
-
-type request_children =
-  { fields : field_or_expr_field list
-  (*
-  ; align : required_start_align option
-  *)
-  ; switch : switch option }
-
-
-type struct_contents =
-  { fields : field_type list
-  (*
-  ; align : required_start_align option
-  *)
-  ; switch : switch option }
-
+type request_struct =
+  { align  : required_start_align option
+  ; fields : field_type list
+  ; switch : switch option
+  ; doc    : doc option }
 
 type request =
   { name : string
   ; opcode : int
   ; combine_adjacent : bool
-  ; children : request_children
-  ; reply : struct_contents option }
+  ; params : request_struct
+  ; reply : request_struct option }
 
 
 type error =
   { name : string
   ; number : int
-  (*
   ; align : required_start_align option
-  *)
   ; fields : field_type list }
 
 
@@ -178,7 +162,8 @@ type event =
   (** A special case for the KeymapNotify event in xproto, which signals that
    * the event struct does not contain a sequence number. *)
   ; align : required_start_align option
-  ; fields : field_type list }
+  ; fields : field_type list
+  ; doc    : doc option }
 
 
 (** The enumerator item's name and its value. *)

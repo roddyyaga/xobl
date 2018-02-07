@@ -469,7 +469,7 @@ let event_of_xml attrs children =
   let align, children = match children with
     | Xml.Element ("required_start_align", align, []) :: rst ->
       let align = required_start_align_of_xml align in
-      Some align, children
+      Some align, rst
     | _ ->
       None, children
   in

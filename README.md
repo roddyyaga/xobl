@@ -23,5 +23,4 @@ that you can plug other languages into it.
 * [Clojure](https://github.com/noodlewiz/xcljb)
 * [Emacs Lisp](https://github.com/ch11ng/xelb)
 * [Elixir](https://github.com/chrys-h/XEB)
-* [Haskell](https://github.com/aslatter/xhb)
-* [Haskell](https://github.com/aslatter/xcb-types) (just the parser)
+* [Haskell](https://github.com/aslatter/xhb) ([parser](https://github.com/aslatter/xcb-types))

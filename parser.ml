@@ -1,3 +1,7 @@
+type doc = string
+  [@@deriving show]
+
+
 (* * Utility functions *)
 let app_with_default f x = function
   | Some a -> f a | None -> x
@@ -201,7 +205,7 @@ type field_type =
   | `Field of field
   | `List of list_field
   | `Required_start_align of required_start_align
-  | `Doc ]
+  | `Doc of doc ]
   [@@deriving show]
 
 let field_type_of_xml = function
@@ -216,9 +220,15 @@ let field_type_of_xml = function
   | "required_start_align", attrs, [] ->
       `Required_start_align (required_start_align_of_xml attrs)
   | "doc", _, _ ->
-      `Doc (* We do not handle documentation yet. *)
+      `Doc "FIXME"
   | x, _, _ ->
       failwith (Printf.sprintf "not a field type: %s" x)
+
+let field_type_of_xml' = function
+  | Xml.Element el ->
+    field_type_of_xml el
+  | _ ->
+    failwith "invalid field type"
 
 
 type case_type = [ `Bit | `Int ]
@@ -234,6 +244,9 @@ let case_type_of_string' = function
   | _ -> failwith "not a case type"
 
 
+(*
+ * Parse switches
+ *)
 type switch =
   { name : string
   ; expr : expression
@@ -286,7 +299,6 @@ let rec case_of_xml (typ, name_c, children) =
   let exprs, align_c, children = parse_exprs [] children in
   let fields, switch = parse_fields [] children in
   { typ; name_c; exprs; align_c; fields; switch }
-
 
 and switch_of_xml name children =
   let parse_case = function
@@ -433,12 +445,9 @@ type error =
 [@@deriving show]
 
 let error_of_xml attrs children =
-  let get_attr x = List.assoc x attrs in
-  let name = get_attr "name" in
-  let number = int_of_string @@ get_attr "number" in
-  let fields = children |> List.map (function
-    | Xml.Element els -> field_type_of_xml els
-    | _ -> failwith "not an error") in
+  let name = List.assoc "name" attrs in
+  let number = int_of_string @@ List.assoc "number" attrs in
+  let fields = List.map field_type_of_xml' children in
   { name; number; fields }
 
 
@@ -447,52 +456,65 @@ type event =
   { name : string
   ; code : int
   ; no_sequence_number : bool
-  ; xge : bool
+  ; align : required_start_align option
   ; fields : field_type list }
   [@@deriving show]
 
 let event_of_xml attrs children =
-  let get_attr x = List.assoc x attrs in
-  let get_attr_opt x = List.assoc_opt x attrs in
-  let name = get_attr "name" in
-  let code = int_of_string @@ get_attr "number" in
-  let no_sequence_number = app_with_default bool_of_string false
-    @@ get_attr_opt "no-sequence-number" in
-  let xge = app_with_default bool_of_string false @@ get_attr_opt "xge" in
-  let fields = children |> List.map (function
-    | Xml.Element els -> field_type_of_xml els
-    | _ -> failwith "not an error") in
-  { name; code; no_sequence_number; xge; fields }
+  let name = List.assoc "name" attrs in
+  let code = int_of_string @@ List.assoc "number" attrs in
+  let no_sequence_number = match List.assoc_opt "no-sequence-number" attrs with
+    | Some x -> bool_of_string x | None -> false
+  in
+  let align, children = match children with
+    | Xml.Element ("required_start_align", align, []) :: rst ->
+      let align = required_start_align_of_xml align in
+      Some align, children
+    | _ ->
+      None, children
+  in
+  let fields = List.map field_type_of_xml' children in
+  { name; code; no_sequence_number; align; fields }
 
+
+(*
+ * Parse enums
+ *)
+type enum_item = string * int
+  [@@deriving show]
 
 type enum_bitmask =
-  { bits : (string * int) list; vals : (string * int) list }
+  { bits : enum_item list
+  ; vals : enum_item list }
   [@@deriving show]
 
 type enum =
   [ `Bitmask of enum_bitmask
-  | `Enum of (string * int) list ]
+  | `Enum of enum_item list ]
   [@@deriving show]
 
-let enum_items_of_xml (c : Xml.xml list) : enum =
+let enum_items_of_xml items =
   let open Xml in
-  let rec loop = function
-    | (v1, []), [] ->
-      `Enum v1
-    | (v1, v2), [] ->
-      `Bitmask { bits = v2; vals = v1 }
-    | (a1, a2), (Element ("item", ["name", name], [Element ("value", [], [PCData v])])) :: rst ->
-      loop ((((name, int_of_string v) :: a1), a2), rst)
-    | (a1, a2), (Element ("item", ["name", name], [Element ("bit", [], [PCData v])])) :: rst ->
-      loop ((a1, ((name, int_of_string v) :: a2)), rst)
-    | acc, (Element ("doc", _, _) :: rst) ->
-      loop (acc, rst)
-    | _, (Element (x, _, _) :: _) ->
-      failwith (Printf.sprintf "not an enum item: %s" x)
+  let rec parse_items (v1, v2) = function
+    | [] ->
+      v1, v2, None
+    | Element ("item", ["name", name], [Element ("value", [], [PCData v])]) :: rest ->
+      let v1 = (name, int_of_string v) :: v1 in
+      parse_items (v1, v2) rest
+    | Element ("item", ["name", name], [Element ("bit",   [], [PCData v])]) :: rest ->
+      let v2 = (name, int_of_string v) :: v2 in
+      parse_items (v1, v2) rest
+    | Element ("doc", _, _) :: [] ->
+      v1, v2, Some "FIXME"
+    | Element ("doc", _, _) :: _ ->
+      failwith "invalid enum: doc item not in tail position"
     | _ ->
       failwith "invalid enum element"
   in
-  loop (([], []), c)
+  let v1, v2, doc = parse_items ([], []) items in
+  match v2 with
+  | [] -> `Enum v1, doc
+  | v2 -> `Bitmask { bits = v2; vals = v1 }, doc
 
 
 type declaration =
@@ -502,12 +524,13 @@ type declaration =
   | `Event_alias of string * (string * int)
   | `Error_alias of string * (string * int)
   | `X_id_union of string * string list
-  | `Enum of string * enum
+  | `Enum of string * enum * doc
   | `Struct of x_struct
   | `Event_struct of event_struct
   | `Union of x_struct
   | `Request of request
   | `Event of event
+  | `Generic_event of event
   | `Error of error ]
   [@@deriving show]
 
@@ -539,7 +562,8 @@ let declaration_of_xml =
       `X_id_union (id, types)
 
   | "enum", ["name", name], children ->
-      `Enum (name, enum_items_of_xml children)
+      let items, doc = enum_items_of_xml children in
+      `Enum (name, items, doc)
 
   | "typedef", ["oldname", old_name; "newname", new_name], []
   | "typedef", ["newname", new_name; "oldname", old_name], [] ->
@@ -555,6 +579,11 @@ let declaration_of_xml =
       `Event_struct (event_struct_of_xml name children)
 
   | "event", attrs, children ->
+    let is_generic = match List.assoc_opt "xge" attrs with
+      | Some x -> bool_of_string x | None -> false in
+    if is_generic then
+      `Generic_event (event_of_xml attrs children)
+    else
       `Event (event_of_xml attrs children)
 
   | "error", attrs, children ->
@@ -580,42 +609,6 @@ let declaration_of_xml =
   | _ ->
       raise failure
 
-  (*
-let print_declaration x =
-  let t, name =
-    match x with
-    | `Import file ->
-        "import", file
-    | `Type_alias (old, nw) ->
-        "type-alias", nw ^ " = " ^ old
-    | `Event_alias (old, (nw, num)) ->
-        "event-alias",  nw ^ "(" ^ string_of_int num ^ ") = " ^ old
-    | `Error_alias (old, (nw, num)) ->
-        "error-alias", nw ^ "(" ^ string_of_int num ^ ") = " ^ old
-    | `X_id name ->
-        "X-id", name
-    | `X_id_union (name, types) ->
-        "X-id-union", name ^ " = " ^ String.concat " | " types
-    | `Enum (name, items) ->
-        let to_s (name, n) = name  ^ "(" ^ string_of_int n ^ ")" in
-        "enum", name ^ " = " ^ String.concat " | " (List.map to_s items)
-    | `Struct name ->
-        "struct", name
-    | `Event_struct name ->
-        "event-struct", name
-    | `Union name ->
-        "union", name
-    | `Request (name, num, _) ->
-        "request", name ^ "(" ^ string_of_int num ^ ")"
-    | `Event ((name, num), _, _) ->
-        "event", name ^ "(" ^ string_of_int num ^ ")"
-    | `Error (name, num) ->
-        "error", name ^ "(" ^ string_of_int num ^ ")"
-  in
-  print_string t;
-  print_char ' ';
-  print_string name
-  *)
 
 let extension_of_xml =
   let failure = Failure "not an xcb root element" in
@@ -655,7 +648,7 @@ let is_xproto = function
 let () =
   List.iter (fun file ->
     let file = Xml.parse_file file in
-    let decls =
+    let _ =
       if is_xproto file then
         xproto file
       else

@@ -244,43 +244,48 @@ type switch =
 and case =
   { typ : case_type
   ; name_c : string option
-  ; expr_c : expression
+  ; exprs : expression list
   ; align_c : required_start_align option
   ; fields : field_type list
   ; switch : switch option }
   [@@deriving show]
 
 let rec case_of_xml (typ, name_c, children) =
-  let rec loop fields = function
+  (* Parse expressions until we fail or we hit a start align declaration.
+   * Clearly the designers of this format were above subtleties such as
+   * "structured data". *)
+  let rec parse_exprs exprs = function
+    | Xml.Element ("required_start_align", a, []) :: rst ->
+      let align = required_start_align_of_xml a in
+      (List.rev exprs), Some align, rst
+    | (Xml.Element x) as f :: rst ->
+      (try
+        let expr = expression_of_xml x in
+        parse_exprs (expr :: exprs) rst
+      with Failure _ ->
+        (List.rev exprs), None, (f :: rst))
+    | _ ->
+      failwith "invalid switch"
+  in
+  let rec parse_fields fields = function
     | Xml.Element ("switch", ["name", name], children) :: [] ->
       let switch = switch_of_xml name children in
       fields, Some switch
-    | Xml.Element ("switch", _, _) :: [] ->
+    | Xml.Element ("switch", _, _) :: _ ->
       failwith "switch not in tail position"
     | [] ->
       fields, None
     | Xml.Element f :: rst ->
       let field = field_type_of_xml f in
-      loop (field :: fields) rst
+      parse_fields (field :: fields) rst
     | _ ->
       failwith "invalid case field"
   in
   let typ = case_type_of_string typ in
   let name_c = one_attr_opt "name" name_c in
-  let expr_c, align_c, children = match children with
-    | Xml.Element x :: Xml.Element ("required_start_align", a, []) :: rst ->
-      let align = required_start_align_of_xml a in
-      x, Some align, rst
-    | Xml.Element _ :: [] ->
-      failwith "invalid switch: missing fields"
-    | Xml.Element x :: rst ->
-      x, None, rst
-    | _ ->
-      failwith "invalid switch"
-  in
-  let expr_c = expression_of_xml expr_c in
-  let fields, switch = loop [] children in
-  { typ; name_c; expr_c; align_c; fields; switch }
+  let exprs, align_c, children = parse_exprs [] children in
+  let fields, switch = parse_fields [] children in
+  { typ; name_c; exprs; align_c; fields; switch }
 
 
 and switch_of_xml name children =
@@ -291,6 +296,8 @@ and switch_of_xml name children =
     | _ ->
       failwith "invalid switch case element"
   in
+  (* The first element should be the switch expression, so we only want that,
+   * plus the start align if it exists. *)
   let expr, align, children = match children with
     | Xml.Element x :: Xml.Element ("required_start_align", a, []) :: rst ->
       let align = required_start_align_of_xml a in

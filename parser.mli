@@ -100,11 +100,11 @@ type switch =
 (** Essentially an if statement which uses an operation that takes the
  * switch expression and the case expression, and includes the fields it
  * contains in the switch if it's true.
- *)
+ * If there are multiple expressions, they should be chained with ORs. *)
 and case =
   { typ : case_type
   ; name_c : string option
-  ; expr_c : expression
+  ; exprs : expression list
   ; align_c : required_start_align option
   ; fields : field_type list
   ; switch : switch option }

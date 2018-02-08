@@ -215,7 +215,7 @@ type enum =
 
 
 type declaration =
-  [ `Import of string
+  | Import of string
   (** Let an extension reference the types declared in another extension.
    * The string is the same as the "name" field of the extension info of the
    * referenced module. *)
@@ -225,60 +225,59 @@ type declaration =
    * generator stopped importing xproto implicitly.
    * I'm not sure which source is to be trusted. *)
 
-  | `X_id of string
+  | X_id of string
   (** Declare a type alias to u32 representing a generic X resource ID. *)
 
-  | `Type_alias of string * string
+  | Type_alias of string * string
   (** Alias a type to a new name. *)
 
-  | `Event_alias of string * (string * int)
+  | Event_alias of string * (string * int)
   (** Alias an event with a new event name and number. *)
 
-  | `Error_alias of string * (string * int)
+  | Error_alias of string * (string * int)
   (** Alias an error with a new error name and number. *)
 
-  | `X_id_union of string * string list
+  | X_id_union of string * string list
   (** Declare an union type of X resources, which should be valid XIDs. *)
 
-  | `Enum of string * enum * doc option
+  | Enum of string * enum * doc option
   (** Declare an enum. See the documentation for the enum type above. *)
 
-  | `Struct of x_struct
+  | Struct of x_struct
   (** Declare a data structure. Clients are probably expected to be able to
    * both encode and decode them, but we could also analyze their usage and
    * only output code for either encoding or decoding (or none, if they're
    * never used). *)
 
-  | `Union of x_struct
+  | Union of x_struct
   (** Basically tagged unions. They're being phased out in favor of
    * switch fields, so we could probably try to fold them as switches into
    * the structs that use them? *)
 
-  | `Event of event
+  | Event of event
   (** An event received by the X server. For most events we only need to
    * generate code that parses them, but for those defined in Event_structs
    * we also need to be able to create them. *)
 
-  | `Error of error
+  | Error of error
   (** Signals the client that there was a problem with a request it sent.
    * We only need to be able to parse these correctly. *)
 
-  | `Generic_event of event
+  | Generic_event of event
   (** Generic events are events that don't have a fixed length. I'm pretty sure
    * they have a completely separate namespace from normal ones. *)
 
-  | `Event_struct of string * allowed_events list
+  | Event_struct of string * allowed_events list
   (** SendExtensionEvent from XInput needs to be able to send events as though
    * they were received over the wire, so event structs define which events
    * the client should be able to recreate. *)
   (* Yet another extension to the spec hand-crafted for a single request
    * in XInput. I'm starting to hate XInput. *)
 
-  | `Request of request
+  | Request of request
   (** A request the client makes to the server. Should be encoded as a function
    * that takes whatever parameters are listed in the params field.
    * Some requests send a reply back to the client. *)
-  ]
 
 
 (** Extension information containing their name and version.
@@ -307,8 +306,8 @@ type extension_info =
 
 
 type protocol_file =
-  [ `Core of declaration list
-  | `Extension of extension_info * declaration list ]
+  | Core of declaration list
+  | Extension of extension_info * declaration list
 
 
 val parse_file : string -> protocol_file

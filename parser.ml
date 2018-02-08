@@ -526,20 +526,20 @@ let enum_items_of_xml items =
 
 
 type declaration =
-  [ `Import of string
-  | `X_id of string
-  | `Type_alias of string * string
-  | `Event_alias of string * (string * int)
-  | `Error_alias of string * (string * int)
-  | `X_id_union of string * string list
-  | `Enum of string * enum * doc option
-  | `Struct of x_struct
-  | `Event_struct of string * allowed_events list
-  | `Union of x_struct
-  | `Request of request
-  | `Event of event
-  | `Generic_event of event
-  | `Error of error ]
+  | Import of string
+  | X_id of string
+  | Type_alias of string * string
+  | Event_alias of string * (string * int)
+  | Error_alias of string * (string * int)
+  | X_id_union of string * string list
+  | Enum of string * enum * doc option
+  | Struct of x_struct
+  | Union of x_struct
+  | Event of event
+  | Error of error
+  | Generic_event of event
+  | Event_struct of string * allowed_events list
+  | Request of request
   [@@deriving show]
 
 
@@ -557,31 +557,31 @@ let declaration_of_xml =
   function PCData _ -> raise failure | Element x ->
   match x with
   | "import", [], [PCData file] ->
-    `Import file
+    Import file
 
   | "xidtype", ["name", id], [] ->
-    `X_id id
+    X_id id
 
   | "xidunion", ["name", id], children ->
     let get_type = function
       | Element ("type", [], [PCData name]) -> name
       | _ -> failwith "unrecognized element in X_id_union" in
     let types = List.map get_type children in
-    `X_id_union (id, types)
+    X_id_union (id, types)
 
   | "enum", ["name", name], children ->
     let items, doc = enum_items_of_xml children in
-    `Enum (name, items, doc)
+    Enum (name, items, doc)
 
   | "typedef", ["oldname", old_name; "newname", new_name], []
   | "typedef", ["newname", new_name; "oldname", old_name], [] ->
-    `Type_alias (old_name, new_name)
+    Type_alias (old_name, new_name)
 
   | "union", ["name", name], children ->
-    `Union (struct_of_xml name children)
+    Union (struct_of_xml name children)
 
   | "struct", ["name", name], children ->
-    `Struct (struct_of_xml name children)
+    Struct (struct_of_xml name children)
 
   | "eventstruct", ["name", name], children ->
     let parse_selector = function
@@ -589,50 +589,50 @@ let declaration_of_xml =
       | _ -> failwith "invalid eventstruct: not an event type selector"
     in
     let allowed = List.map parse_selector children in
-    `Event_struct (name, allowed)
+    Event_struct (name, allowed)
 
   | "event", attrs, children ->
     let is_generic = match List.assoc_opt "xge" attrs with
       | Some x -> bool_of_string x | None -> false in
     if is_generic then
-      `Generic_event (event_of_xml attrs children)
+      Generic_event (event_of_xml attrs children)
     else
-      `Event (event_of_xml attrs children)
+      Event (event_of_xml attrs children)
 
   | "error", attrs, children ->
-    `Error (error_of_xml attrs children)
+    Error (error_of_xml attrs children)
 
   | "eventcopy", attrs, [] ->
     let get_attr x = List.assoc x attrs in
     let new_name = get_attr "name" in
     let old_name = get_attr "ref" in
     let number = int_of_string @@ get_attr "number" in
-    `Event_alias (old_name, (new_name, number))
+    Event_alias (old_name, (new_name, number))
 
   | "errorcopy", attrs, [] ->
     let get_attr x = List.assoc x attrs in
     let new_name = get_attr "name" in
     let old_name = get_attr "ref" in
     let number = int_of_string @@ get_attr "number" in
-    `Error_alias (old_name, (new_name, number))
+    Error_alias (old_name, (new_name, number))
 
   | "request", attrs, children ->
-    `Request (request_of_xml attrs children)
+    Request (request_of_xml attrs children)
 
   | _ ->
     raise failure
 
 
 type protocol_file =
-  [ `Core of declaration list
-  | `Extension of extension_info * declaration list ]
+  | Core of declaration list
+  | Extension of extension_info * declaration list
 
 
 let parse_file fname : protocol_file =
   let xml = Xml.parse_file fname in
   match xml with
   | Xml.Element ("xcb", ["header", "xproto"], children) ->
-    `Core (List.map declaration_of_xml children)
+    Core (List.map declaration_of_xml children)
   | Xml.Element ("xcb", attrs, children) ->
     let get_attr x = List.assoc x attrs in
     let version =
@@ -645,7 +645,7 @@ let parse_file fname : protocol_file =
     let name = get_attr "extension-name" in
     let declarations = List.map declaration_of_xml children in
     let info = { file; name; xname; multiword; version } in
-    `Extension (info, declarations)
+    Extension (info, declarations)
   | _ ->
     failwith "not an XCB root element"
 

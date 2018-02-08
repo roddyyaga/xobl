@@ -46,13 +46,13 @@ let rec list_extract f = function
 (* Padding bytes in a packet  *)
 type pad_type =
   [ `Bytes | `Align ]
-[@@deriving show]
+  [@@deriving show]
 
 type padding =
   { typ : pad_type
   ; amount : int
   ; serialize : bool }
-[@@deriving show]
+  [@@deriving show]
 
 let pad_of_xml attrs =
   let serialize = get_bool_attr "serialize" attrs in
@@ -66,7 +66,7 @@ let pad_of_xml attrs =
 type required_start_align =
   { align  : int
   ; offset : int option }
-[@@deriving show]
+  [@@deriving show]
 
 let required_start_align_of_xml attrs =
   let align = int_of_string @@ List.assoc "align" attrs in
@@ -84,7 +84,7 @@ let consume_align children = match children with
 
 type op =
   [ `Add | `Sub | `Mul | `Div | `Bit_and | `Bit_left_shift ]
-[@@deriving show]
+  [@@deriving show]
 
 let op_of_xml attrs =
   match List.assoc "op" attrs with
@@ -99,7 +99,7 @@ let op_of_xml attrs =
 
 type unop =
   [ `Bit_not ]
-[@@deriving show]
+  [@@deriving show]
 
 let unop_of_xml attrs =
   match List.assoc "op" attrs with
@@ -118,7 +118,7 @@ type expression =
   | `Current_ref
   | `Value of int
   | `Bit of int ]
-[@@deriving show]
+  [@@deriving show]
 
 let rec expression_of_xml =
   let open Xml in function
@@ -153,7 +153,7 @@ let rec expression_of_xml =
 type allowed_val =
   [ `Enum | `Alt_enum
   | `Mask | `Alt_mask ]
-[@@deriving show]
+  [@@deriving show]
 
 let allowed_val_type_of_string = function
   | "enum" -> `Enum
@@ -345,7 +345,7 @@ type x_struct =
   { name : string
   ; fields : field_type list
   ; switch : switch option }
-[@@deriving show]
+  [@@deriving show]
 
 let struct_of_xml name children =
   let switch, children = children |> list_extract (function
@@ -532,7 +532,7 @@ type declaration =
   | `Event_alias of string * (string * int)
   | `Error_alias of string * (string * int)
   | `X_id_union of string * string list
-  | `Enum of string * enum * doc
+  | `Enum of string * enum * doc option
   | `Struct of x_struct
   | `Event_struct of string * allowed_events list
   | `Union of x_struct
@@ -623,92 +623,38 @@ let declaration_of_xml =
     raise failure
 
 
-let extension_of_xml =
-  let failure = Failure "not an xcb root element" in
-  function
-  | Xml.Element ("xcb", attrs, children) ->
-      begin try
-        let get_attr x = List.assoc x attrs in
-        let version =
-          let major = int_of_string @@ get_attr "major-version" in
-          let minor = int_of_string @@ get_attr "minor-version" in
-          major, minor in
-        let multiword = get_bool_attr "extension_multiword" attrs in
-        let file = get_attr "header" in
-        let xname = get_attr "extension-xname" in
-        let name = get_attr "extension-name" in
-        let declarations = List.map declaration_of_xml children in
-        { file; name; xname; multiword; version }, declarations
-      with Not_found ->
-        raise failure
-      end
-  | Xml.PCData _ | Xml.Element _ ->
-      raise failure
+type protocol_file =
+  [ `Core of declaration list
+  | `Extension of extension_info * declaration list ]
 
 
-let xproto = function
+let parse_file fname : protocol_file =
+  let xml = Xml.parse_file fname in
+  match xml with
   | Xml.Element ("xcb", ["header", "xproto"], children) ->
-      List.map declaration_of_xml children
-  | Xml.PCData _ | Xml.Element _ ->
-      failwith "not the core protocol specification"
+    `Core (List.map declaration_of_xml children)
+  | Xml.Element ("xcb", attrs, children) ->
+    let get_attr x = List.assoc x attrs in
+    let version =
+      let major = int_of_string @@ get_attr "major-version" in
+      let minor = int_of_string @@ get_attr "minor-version" in
+      major, minor in
+    let multiword = get_bool_attr "extension_multiword" attrs in
+    let file = get_attr "header" in
+    let xname = get_attr "extension-xname" in
+    let name = get_attr "extension-name" in
+    let declarations = List.map declaration_of_xml children in
+    let info = { file; name; xname; multiword; version } in
+    `Extension (info, declarations)
+  | _ ->
+    failwith "not an XCB root element"
 
-
-let is_xproto = function
-  | Xml.Element ("xcb", ["header", "xproto"], children) -> true
-  | Xml.PCData _ | Xml.Element _ -> false
-
-
+(*
 let () =
-  List.iter (fun f ->
-    let file = Xml.parse_file f in
-    print_string (f ^ ":");
-    let decls =
-      if is_xproto file then
-        xproto file
-      else
-        let (info, decls) = extension_of_xml file in
-        decls in
-    print_endline " OK";
-    List.iter (function
-      | `Union s -> Format.printf "%s\n" (show_x_struct s)
-      | _ -> ())
-      decls;
-    (* List.iter (fun x -> Format.printf "%s\n" @@ show_declaration x) decls;*)
-    ())
-    (List.tl (Array.to_list Sys.argv))
-
-
-  (*
-open OUnit2
-
-let test_parse f test_ctx =
-  let file = Xml.parse_file f in
-  let _ =
-    if is_xproto file then
-      xproto file
-    else
-      let ext = extension_of_xml file in
-      ext.declarations in
-  ()
-
-
-let test_files =
-  [ "bigreq.xml"; "composite.xml"; "damage.xml"; "dpms.xml"; "dri2.xml"
-  ; "dri3.xml"; "ge.xml"; "glx.xml"; "present.xml"; "randr.xml"
-  ; "record.xml"; "render.xml"; "res.xml"; "screensaver.xml"; "shape.xml"
-  ; "shm.xml"; "sync.xml"; "xc_misc.xml"; "xevie.xml"; "xf86dri.xml"
-  ; "xfixes.xml"; "xinerama.xml"; "xinput.xml"; "xkb.xml"; "xprint.xml"
-  ; "xproto.xml"; "xselinux.xml"; "xtest.xml"; "xvmc.xml"; "xv.xml"
-  ]
-
-
-let suite =
-  "Testing parsing" >:::
-    List.map (fun f ->
-      ("Parsing " ^ f) >:: (test_parse ("xproto/src/" ^ f)))
-      test_files
-
-
-let () =
-  run_test_tt_main suite2
-  *)
+  let files = List.tl (Array.to_list Sys.argv) in
+  files |> List.iter begin fun f ->
+    print_string f;
+    let _ = parse_file f in
+    print_endline " OK"
+  end
+*)

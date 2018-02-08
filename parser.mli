@@ -9,7 +9,10 @@ type pad_type =
 type padding =
   { typ : pad_type
   ; amount : int
-  ; serialize : bool }
+  ; serialize : bool
+  (* I really don't know what this flag does. It's only used in xkb and it's
+   * not documented. I'll have to look into xcbgen. *)
+  }
 
 
 (* Something to do with an alignment checker. Should probably check out this
@@ -39,9 +42,9 @@ type expression =
   | `Field_ref of string
     (** The value of another field in the same structure. *)
   | `Param_ref of string * string
-    (** The value of a field in a structure that contains the current one. *)
+    (** The value of a field in a structure that contains the current one. [type * name] *)
   | `Enum_ref of string * string
-    (** The value of an identifier in an enum. *)
+    (** The value of an identifier in an enum. [type * name] *)
   | `Population_count of expression
     (** The number of set bits. (e.g. 0b01101 -> 3) *)
   | `Sum_of of string * expression option
@@ -56,17 +59,11 @@ type expression =
 
 
 type allowed_val =
-  [ `Enum
-  | `Mask
-  | `Alt_enum
-  | `Alt_mask
-  (* The documentation for these says that the values that these enums and
-   * masks constrain may be within the range of the enum/mask, "but they need
-   * not be". What the flying fuck does that even mean?
-   * After looking at the spec files for a while, I think I have a vague idea.
-   * The enums referenced provide some useful constants that have a special
-   * meaning, such as "no window" being 0. That being said, this is a terrible
-   * way to put it. *)
+  [ `Enum | `Mask
+  (** The field ONLY allows values belonging to these enums. *)
+  | `Alt_enum | `Alt_mask
+  (** The fields take any value of the referenced types, but the enums
+   * referenced may provide some defaults with special meaning. *)
   ]
 
 
@@ -243,7 +240,7 @@ type declaration =
   | `X_id_union of string * string list
   (** Declare an union type of X resources, which should be valid XIDs. *)
 
-  | `Enum of string * enum * doc
+  | `Enum of string * enum * doc option
   (** Declare an enum. See the documentation for the enum type above. *)
 
   | `Struct of x_struct
@@ -307,3 +304,11 @@ type extension_info =
   ; version : int * int
   (** major * minor version. *)
   }
+
+
+type protocol_file =
+  [ `Core of declaration list
+  | `Extension of extension_info * declaration list ]
+
+
+val parse_file : string -> protocol_file

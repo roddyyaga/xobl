@@ -7,6 +7,9 @@ Not nearly done.
 `parser.ml` attempts to parse the horrors of the X11 XML spec into something
 structured and understandable. `parser.mli` documents the output.
 
+`analyzer.ml` analyzes the output of the parser and tries to turn it into
+something more useful to a less braindead language than C.
+
 In the future there will be an OCaml code generator, hopefully functorized so
 that you can plug other languages into it.
 

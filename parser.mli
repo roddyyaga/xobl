@@ -1,3 +1,4 @@
+(** Documentation is not supported yet. *)
 type doc = string
 
 
@@ -84,7 +85,7 @@ type list_field = (expression option) field_t
 
 
 type field_type =
-  [ `Fd of string
+  [ `File_descriptor of string
   | `Pad of padding
   | `Field of field
   | `List of list_field
@@ -105,8 +106,8 @@ type case_type =
 (** A field that uses an expression to determine which fields are included in
  * the enclosing struct. *)
 type switch =
-  { name : string
-  ; expr : expression
+  { name  : string
+  ; expr  : expression
   ; align : required_start_align option
   ; cases : case list }
 
@@ -115,30 +116,31 @@ type switch =
  * contains in the switch if it's true.
  * If there are multiple expressions, they should be chained with ORs. *)
 and case =
-  { typ : case_type
-  ; name_c : string option
-  ; exprs : expression list
+  { typ     : case_type
+  ; name_c  : string option
+  ; exprs   : expression list
   ; align_c : required_start_align option
-  ; fields : field_type list
-  ; switch : switch option }
+  ; fields  : field_type list
+  ; switch  : switch option }
 
 
 type x_struct =
   { name : string
   ; fields : field_type list
-  ; switch : switch option }
+  ; switch : switch option
+  (* Thanks to Xinput, we also need to handle structs with fields that may
+   * or may not be there. I guess we can handle those with option types in
+   * OCaml. *)
+  }
 
 
-type event_type_selector =
-  { extension : string
-  ; xge : bool
-  ; opcode_min : int
-  ; opcode_max : int }
-
-
-type event_struct =
-  { name : string
-  ; allowed : event_type_selector list }
+(** Defines what events may be sent. *)
+type allowed_events =
+  { extension    : string
+  (** The extension the events are defined in. *)
+  ; opcode_range : int * int
+  (** Only events that have opcodes within this range are allowed. *)
+  }
 
 
 type request_struct =
@@ -155,22 +157,30 @@ type request =
   ; reply : request_struct option }
 
 
+(** A 32-byte struct. Its first byte is 0 to differentiate it from events,
+ * the second contains the error code and the third and fourth contain
+ * the least significant bits of the sequence number of the request. *)
 type error =
-  { name : string
-  ; number : int
-  ; align : required_start_align option
+  { name   : string
+  ; code   : int
+  (** The 8-bit code that identifies the event. *)
+  ; align  : required_start_align option
   ; fields : field_type list }
 
 
-(** A 32-bit struct. *)
+(** A 32-byte struct. The first byte contains the code in the first 7 least
+ * significant bits and a flag in the most significant that is set when the
+ * event was generated from a SendEvent request.
+ * Its third and fourth bytes contain the least significant bits of the
+ * sequence number of the last request issued by the client. *)
 type event =
   { name : string
   ; code : int
-  (** The code that identifies the event. *)
+  (** The 7-bit code that identifies the event. *)
   ; no_sequence_number : bool
   (** A special case for the KeymapNotify event in xproto, which signals that
    * the event struct does not contain a sequence number. *)
-  ; align : required_start_align option
+  ; align  : required_start_align option
   ; fields : field_type list
   ; doc    : doc option }
 
@@ -236,17 +246,41 @@ type declaration =
   | `Enum of string * enum * doc
   (** Declare an enum. See the documentation for the enum type above. *)
 
+  | `Struct of x_struct
+  (** Declare a data structure. Clients are probably expected to be able to
+   * both encode and decode them, but we could also analyze their usage and
+   * only output code for either encoding or decoding (or none, if they're
+   * never used). *)
+
+  | `Union of x_struct
+  (** Basically tagged unions. They're being phased out in favor of
+   * switch fields, so we could probably try to fold them as switches into
+   * the structs that use them? *)
+
   | `Event of event
-  | `Generic_event of event
-  (* Generic events should be handled differently from normal ones.
-   * Dunno how exactly. *)
+  (** An event received by the X server. For most events we only need to
+   * generate code that parses them, but for those defined in Event_structs
+   * we also need to be able to create them. *)
 
   | `Error of error
+  (** Signals the client that there was a problem with a request it sent.
+   * We only need to be able to parse these correctly. *)
 
-  | `Struct of x_struct
-  | `Event_struct of event_struct
-  | `Union of x_struct
+  | `Generic_event of event
+  (** Generic events are events that don't have a fixed length. I'm pretty sure
+   * they have a completely separate namespace from normal ones. *)
+
+  | `Event_struct of string * allowed_events list
+  (** SendExtensionEvent from XInput needs to be able to send events as though
+   * they were received over the wire, so event structs define which events
+   * the client should be able to recreate. *)
+  (* Yet another extension to the spec hand-crafted for a single request
+   * in XInput. I'm starting to hate XInput. *)
+
   | `Request of request
+  (** A request the client makes to the server. Should be encoded as a function
+   * that takes whatever parameters are listed in the params field.
+   * Some requests send a reply back to the client. *)
   ]
 
 
@@ -267,7 +301,7 @@ type extension_info =
   ; multiword : bool
   (** Whether the resulting C function name prefixes should be composed of
    * a single alphanumeric string, or multiple strings separated by _. *)
-  (* I'm nor sure why they added this flag instead of just using an
+  (* I'm nor sure why they added this shady flag instead of just using an
    * attribute to define the exact C name prefix. *)
 
   ; version : int * int

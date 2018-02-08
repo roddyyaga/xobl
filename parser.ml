@@ -43,8 +43,6 @@ let rec list_extract f = function
       found, x :: ls
 
 
-
-
 (* Padding bytes in a packet  *)
 type pad_type =
   [ `Bytes | `Align ]
@@ -57,8 +55,7 @@ type padding =
 [@@deriving show]
 
 let pad_of_xml attrs =
-  let serialize = app_with_default bool_of_string false
-    @@ List.assoc_opt "serialize" attrs in
+  let serialize = get_bool_attr "serialize" attrs in
   let typ, amount =
     try       `Bytes, List.assoc "bytes" attrs
     with _ -> `Align, List.assoc "align" attrs in
@@ -225,7 +222,7 @@ let list_field_of_xml attrs children =
 
 
 type field_type =
-  [ `Fd of string
+  [ `File_descriptor of string
   | `Pad of padding
   | `Field of field
   | `List of list_field
@@ -234,7 +231,7 @@ type field_type =
 
 let field_type_of_xml = function
   | "fd", ["name", name], [] ->
-      `Fd name
+      `File_descriptor name
   | "pad", attrs, [] ->
       `Pad (pad_of_xml attrs)
   | "field", attrs, [] ->
@@ -351,47 +348,36 @@ type x_struct =
 [@@deriving show]
 
 let struct_of_xml name children =
-  let rec loop = function
-    | (fields, switch), [] ->
-        fields, switch
-    | (f, None), Xml.Element ("switch", ["name", name], children) :: rst ->
-        loop ((f, Some (switch_of_xml name children)), rst)
-    | (f, s), Xml.Element x :: rst ->
-        loop ((field_type_of_xml x :: f, s), rst)
-    | _ -> failwith "not a struct" in
-  let fields, switch =
-    let (f, s) = loop (([], None), children) in
-    List.rev f, s in
+  let switch, children = children |> list_extract (function
+    | Xml.Element ("switch", ["name", name], children) ->
+      Some (switch_of_xml name children)
+    | _ -> None)
+  in
+  let fields = children |> List.map (function
+    | Xml.Element x -> field_type_of_xml x
+    | _ -> failwith "invalid struct: invalid struct field")
+  in
   { name; fields; switch }
 
 
-type event_type_selector =
+(* Technically, event type selectors also have an "xge" attribute for selecting
+ * generic events as well, but given that the documentation currently states
+ * that only xge="false" is currently supported we'll just ignore it.
+ * For an explaination on why generic events are not supported, go look at
+ * xproto/src/xinput.xml on line 2612.
+ * The only extension that even uses this thing is xinput, for a single
+ * request. *)
+type allowed_events =
   { extension : string
-  ; xge : bool
-  ; opcode_min : int
-  ; opcode_max : int }
-[@@deriving show]
+  ; opcode_range : int * int }
+  [@@deriving show]
 
 let event_type_selector_of_xml attrs =
   let get_attr x = List.assoc x attrs in
   let extension = get_attr "extension" in
-  let xge = bool_of_string @@ get_attr "xge" in
   let opcode_min = int_of_string @@ get_attr "opcode-min" in
   let opcode_max = int_of_string @@ get_attr "opcode-max" in
-  { extension; xge; opcode_min; opcode_max }
-
-
-type event_struct =
-  { name : string
-  ; allowed : event_type_selector list }
-[@@deriving show]
-
-let event_struct_of_xml name children =
-  let allowed = children |> List.map (function
-    | Xml.Element ("allowed", attrs, []) ->
-        event_type_selector_of_xml attrs
-    | _ -> failwith "not an eventstruct") in
-  { name; allowed }
+  { extension; opcode_range = (opcode_min, opcode_max) }
 
 
 type request_struct =
@@ -409,10 +395,7 @@ type request =
   ; reply : request_struct option }
   [@@deriving show]
 
-(* TODO we need to account for the presence of a <doc> element in tail
- * position as well *)
 let request_of_xml attrs children =
-  (* Parse fields until we hit a switch. *)
   let rec parse_reply reply = function
     | [] ->
       { reply with fields = List.rev reply.fields }
@@ -433,7 +416,6 @@ let request_of_xml attrs children =
     let align, children = consume_align children in
     parse_reply { align; fields = []; switch = None; doc = None } children
   in
-  (* Parse fields until we hit a reply, a switch, or both. *)
   let rec parse_req (req, reply) = function
     | [] ->
       let req = { req with fields = List.rev req.fields } in
@@ -467,17 +449,17 @@ let request_of_xml attrs children =
 
 type error =
   { name : string
-  ; number : int
+  ; code : int
   ; align : required_start_align option
   ; fields : field_type list }
   [@@deriving show]
 
 let error_of_xml attrs children =
   let name = List.assoc "name" attrs in
-  let number = int_of_string @@ List.assoc "number" attrs in
+  let code = int_of_string @@ List.assoc "number" attrs in
   let align, children = consume_align children in
   let fields = List.map field_type_of_xml' children in
-  { name; number; align; fields }
+  { name; code; align; fields }
 
 
 type event =
@@ -552,7 +534,7 @@ type declaration =
   | `X_id_union of string * string list
   | `Enum of string * enum * doc
   | `Struct of x_struct
-  | `Event_struct of event_struct
+  | `Event_struct of string * allowed_events list
   | `Union of x_struct
   | `Request of request
   | `Event of event
@@ -602,7 +584,12 @@ let declaration_of_xml =
     `Struct (struct_of_xml name children)
 
   | "eventstruct", ["name", name], children ->
-    `Event_struct (event_struct_of_xml name children)
+    let parse_selector = function
+      | Xml.Element ("allowed", attrs, []) -> event_type_selector_of_xml attrs
+      | _ -> failwith "invalid eventstruct: not an event type selector"
+    in
+    let allowed = List.map parse_selector children in
+    `Event_struct (name, allowed)
 
   | "event", attrs, children ->
     let is_generic = match List.assoc_opt "xge" attrs with
@@ -646,15 +633,15 @@ let extension_of_xml =
           let major = int_of_string @@ get_attr "major-version" in
           let minor = int_of_string @@ get_attr "minor-version" in
           major, minor in
-        let multiword =
-          match List.assoc_opt "extension-multiword" attrs with
-          | Some x -> bool_of_string x | None -> false in
+        let multiword = get_bool_attr "extension_multiword" attrs in
         let file = get_attr "header" in
         let xname = get_attr "extension-xname" in
         let name = get_attr "extension-name" in
         let declarations = List.map declaration_of_xml children in
         { file; name; xname; multiword; version }, declarations
-      with Not_found -> raise failure end
+      with Not_found ->
+        raise failure
+      end
   | Xml.PCData _ | Xml.Element _ ->
       raise failure
 
@@ -675,14 +662,17 @@ let () =
   List.iter (fun f ->
     let file = Xml.parse_file f in
     print_string (f ^ ":");
-    let _ =
+    let decls =
       if is_xproto file then
         xproto file
       else
         let (info, decls) = extension_of_xml file in
         decls in
     print_endline " OK";
-    (* List.iter (function `Event ev -> Format.printf "%s\n" (show_event ev) | _ -> ()) decls; *)
+    List.iter (function
+      | `Union s -> Format.printf "%s\n" (show_x_struct s)
+      | _ -> ())
+      decls;
     (* List.iter (fun x -> Format.printf "%s\n" @@ show_declaration x) decls;*)
     ())
     (List.tl (Array.to_list Sys.argv))

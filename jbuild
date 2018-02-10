@@ -1,6 +1,6 @@
 (jbuild_version 1)
 
-(executable
+(library
  ((name analyzer)
   (libraries (xml-light))
   (preprocess (pps (ppx_deriving.std)))))

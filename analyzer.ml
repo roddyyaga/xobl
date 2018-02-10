@@ -65,33 +65,78 @@ let rec import_tree f =
   | _  -> Tree (f, List.map import_tree imports)
 
 
+(** The base types that are actually used in the extensions.
+ * There's more but we won't consider them until they're used in an extension. *)
+type base_type =
+  | Uint32
+  | Uint16
+  | Uint8
+  | Int32
+  | Float64
+  | Float32
+  | Byte
+  | Struct of string
+  | List of base_type
+  | Alias of string
+
+let base_type_of_string = function
+  | "CARD32" -> Some Uint32
+  | "CARD16" -> Some Uint16
+  | "CARD8"  -> Some Uint8
+  | "INT32"  -> Some Int32
+  | "double" -> Some Float64
+  | "float"  -> Some Float32
+  | "char"   -> Some Byte
+  | t        -> None
+
+
+type declaration =
+  | Type of string * base_type
+  (** A type alias to one of the base types. *)
+
+
+let mk_struct { X.fields; switch; _ } =
+  fields |> List.map (function
+    | `Field { X.name; typ; allowed; _ } ->
+      `Field (Type (name, Alias typ))
+
+    | `Pad { X.typ; amount; serialize } ->
+      `Pad (amount)
+
+    | `List { X.name; typ; allowed; value } ->
+      `Field (Type (name, List (Alias typ)))
+
+    | _ ->
+      failwith "invalid struct field")
+
+
+  (*
 let base_types =
-  [ "CARD32"
-  ; "CARD16"
-  ; "CARD8"
-  ; "INT32"
-  ; "char"
-  ; "float"
-  ; "double"
-  ]
+  [ Type_alias ("CARD32", Uint32)
+  ; Type_alias ("CARD16", Uint16)
+  ; Type_alias ("CARD8",  Uint8)
+  ; Type_alias ("INT32",  Int32)
+  ; Type_alias ("double", Float64)
+  ; Type_alias ("float",  Float32)
+  ; Type_alias ("char",   Byte) ]
+*)
 
 
-let get_names imported (d : X.declaration list) =
+let get_names imported (d : X.declaration list) : declaration list =
   List.fold_left (fun acc -> function
-    (*
-    | X.Enum (name, _, _)
-    *)
-    | X.X_id name
-    (*
-    | X.X_id_union (name, _)
-    *)
-    | X.Struct { Parser.name; _ }
-    | X.Union { Parser.name; _ } ->
-      name :: acc
-    | X.Type_alias (old, n) when List.mem old acc || List.mem old imported || List.mem old base_types ->
-      (n ^ " (" ^ old ^ ")") :: n :: acc
-    | X.Type_alias (old, n) ->
-      failwith ("not found: " ^ old)
+    | X.X_id name ->
+      Type (name, Uint32) :: acc
+
+    | X.Struct { X.name; _ } ->
+      Type (name, Struct name) :: acc
+
+    | X.Type_alias (name, old) ->
+      (match base_type_of_string old with
+      | Some t ->
+        Type (name, t) :: acc
+      | None ->
+        Type (name, Alias old) :: acc)
+
     | _ -> acc)
     [] d
 
@@ -106,12 +151,49 @@ let rec names = function
     get_names imported d
 
 
+let files =
+  [ "bigreq"
+  ; "composite"
+  ; "damage"
+  ; "dpms"
+  ; "dri2"
+  ; "dri3"
+  ; "ge"
+  ; "glx"
+  ; "present"
+  ; "randr"
+  ; "record"
+  ; "render"
+  ; "res"
+  ; "screensaver"
+  ; "shape"
+  ; "shm"
+  ; "sync"
+  ; "xc_misc"
+  ; "xevie"
+  ; "xf86dri"
+  ; "xf86vidmode"
+  ; "xfixes"
+  ; "xinerama"
+  ; "xinput"
+  ; "xkb"
+  ; "xprint"
+  ; "xproto"
+  ; "xselinux"
+  ; "xtest"
+  ; "xvmc"
+  ; "xv"
+  ]
+
+
 let () =
+  (*
   let files = List.tl (Array.to_list Sys.argv) in
+  *)
   files |> List.iter begin fun file ->
     let t = import_tree file in
     let ns = names t in
-    List.iter print_endline ns
+    ()
   end
 
 

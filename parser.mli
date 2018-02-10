@@ -42,9 +42,9 @@ type expression =
   | `Field_ref of string
     (** The value of another field in the same structure. *)
   | `Param_ref of string * string
-    (** The value of a field in a structure that contains the current one. [type * name] *)
+    (** The value of a field in a structure that contains the current one. [type, name] *)
   | `Enum_ref of string * string
-    (** The value of an identifier in an enum. [type * name] *)
+    (** The value of an identifier in an enum. [type, name] *)
   | `Population_count of expression
     (** The number of set bits. (e.g. 0b01101 -> 3) *)
   | `Sum_of of string * expression option
@@ -122,7 +122,7 @@ and case =
 
 
 type x_struct =
-  { name : string
+  { name   : string
   ; fields : field_type list
   ; switch : switch option
   (* Thanks to Xinput, we also need to handle structs with fields that may
@@ -220,22 +220,20 @@ type declaration =
    * The string is the same as the "name" field of the extension info of the
    * referenced module. *)
   (* The documentation states that types from xproto are implicitly imported,
-   * but import declarations for xproto are still present in most of the
-   * extensions, and the release notes for 1.0RC2 mention that the code
-   * generator stopped importing xproto implicitly.
-   * I'm not sure which source is to be trusted. *)
+   * but that's a lie. In version 1.0 RC2 all the implicit xproto declarations
+   * were made explicit. *)
 
   | X_id of string
   (** Declare a type alias to u32 representing a generic X resource ID. *)
 
   | Type_alias of string * string
-  (** Alias a type to a new name. *)
+  (** Alias a type to a new name. [new, old] *)
 
-  | Event_alias of string * (string * int)
-  (** Alias an event with a new event name and number. *)
+  | Event_alias of (string * int) * string
+  (** Alias an event with a new event name and number. [(new, num), old] *)
 
-  | Error_alias of string * (string * int)
-  (** Alias an error with a new error name and number. *)
+  | Error_alias of (string * int) * string
+  (** Alias an error with a new error name and number. [(new, num), old] *)
 
   | X_id_union of string * string list
   (** Declare an union type of X resources, which should be valid XIDs. *)

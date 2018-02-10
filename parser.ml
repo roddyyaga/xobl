@@ -529,8 +529,8 @@ type declaration =
   | Import of string
   | X_id of string
   | Type_alias of string * string
-  | Event_alias of string * (string * int)
-  | Error_alias of string * (string * int)
+  | Event_alias of (string * int) * string
+  | Error_alias of (string * int) * string
   | X_id_union of string * string list
   | Enum of string * enum * doc option
   | Struct of x_struct
@@ -575,7 +575,7 @@ let declaration_of_xml =
 
   | "typedef", ["oldname", old_name; "newname", new_name], []
   | "typedef", ["newname", new_name; "oldname", old_name], [] ->
-    Type_alias (old_name, new_name)
+    Type_alias (new_name, old_name)
 
   | "union", ["name", name], children ->
     Union (struct_of_xml name children)
@@ -607,14 +607,14 @@ let declaration_of_xml =
     let new_name = get_attr "name" in
     let old_name = get_attr "ref" in
     let number = int_of_string @@ get_attr "number" in
-    Event_alias (old_name, (new_name, number))
+    Event_alias ((new_name, number), old_name)
 
   | "errorcopy", attrs, [] ->
     let get_attr x = List.assoc x attrs in
     let new_name = get_attr "name" in
     let old_name = get_attr "ref" in
     let number = int_of_string @@ get_attr "number" in
-    Error_alias (old_name, (new_name, number))
+    Error_alias ((new_name, number), old_name)
 
   | "request", attrs, children ->
     Request (request_of_xml attrs children)

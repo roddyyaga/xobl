@@ -115,6 +115,8 @@ type switch =
 and case =
   { typ     : case_type
   ; name_c  : string option
+  (* Why would a case expression ever need a goddamn name?
+   * What is it for? XInput only knows. *)
   ; exprs   : expression list
   ; align_c : required_start_align option
   ; fields  : field_type list
@@ -269,6 +271,7 @@ type declaration =
   (** SendExtensionEvent from XInput needs to be able to send events as though
    * they were received over the wire, so event structs define which events
    * the client should be able to recreate. *)
+  (* XXX what is the first argument? *)
   (* Yet another extension to the spec hand-crafted for a single request
    * in XInput. I'm starting to hate XInput. *)
 

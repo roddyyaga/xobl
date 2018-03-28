@@ -3,4 +3,6 @@
 (library
  ((name analyzer)
   (libraries (xml-light))
-  (preprocess (pps (ppx_deriving.std)))))
+  (inline_tests
+   ((deps ((glob_files xproto/src/*.xml)))))
+  (preprocess (pps (ppx_deriving.std ppx_inline_test)))))

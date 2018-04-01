@@ -1,3 +1,9 @@
+(* * TODO either parse ints as int32s or leave them as strings and parse them
+ * when their type is decided. On 32-bit systems OCaml ints are 31 bits so
+ * they might not be enough to contain some of the constants
+ *)
+
+
 type doc = string
   [@@deriving show]
 

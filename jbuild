@@ -2,7 +2,7 @@
 
 (library
  ((name analyzer)
-  (libraries (xml-light))
+  (libraries (xml-light unix))
   (inline_tests
    ((deps ((glob_files xproto/src/*.xml)))))
   (preprocess (pps (ppx_deriving.std ppx_inline_test)))))

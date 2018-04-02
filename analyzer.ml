@@ -43,6 +43,11 @@ type ref_type =
   | Enum_ref of string
   | Bitmask_ref of string
 
+
+type ref_t =
+  [ `Ref of string
+  | `Ext of string * string ]
+
 type x_t =
   | Base of base_type
   | Ref of ref_type
@@ -58,6 +63,7 @@ type declaration =
   | Enum of string * enum_items
   | Bitmask of string * bitmask
   | Error of string * int * struct_item list
+  | Error_alias of string * int * ref_t
 
 type x_module =
   { file_name : string
@@ -107,7 +113,7 @@ and declaration d =
       Bitmask (name, { flags = bits; vals }) :: acc
 
     | X.Type_alias (name, old) ->
-      begin try (* @Hack REMOVE THIS *)
+      begin try (* @Hack DELET THIS *)
       let t =
         match base_type_of_string old with
         | Some t ->
@@ -136,10 +142,14 @@ and declaration d =
       ) in
       Error (name, code, fields) :: acc
 
+    | X.Error_alias ((name, code), old) ->
+      let old = error_alias old acc in
+      Error_alias (name, code, old) :: acc
+
     | _ ->
       acc
   in
-  List.fold_left d ~init:[] ~f:loop
+  List.rev @@ List.fold_left d ~init:[] ~f:loop
 
 
 and alias id decls =
@@ -147,42 +157,70 @@ and alias id decls =
     | Type (n, Ref (Base_ref _)) :: _
     | Type (n, Ext_ref (_, Base_ref _)) :: _
     | Type (n, Base _) :: _ when n = id ->
-      Some (Ref (Base_ref id))
+      Some (Base_ref id)
 
     | Type (n, Ref (Enum_ref _)) :: _
     | Type (n, Ext_ref (_, Enum_ref _)) :: _
     | Enum (n, _) :: _ when n = id ->
-      Some (Ref (Enum_ref id))
+      Some (Enum_ref id)
 
     | Type (n, Ref (Bitmask_ref _)) :: _
     | Type (n, Ext_ref (_, Bitmask_ref _)) :: _
     | Bitmask (n, _) :: _ when n = id ->
-      Some (Ref (Bitmask_ref id))
+      Some (Bitmask_ref id)
 
     | [] ->
       None
 
     | Type _ :: rest | Enum _ :: rest | Bitmask _ :: rest
-    | Error _ :: rest
+    | Error _ :: rest | Error_alias _ :: rest
     | Import _ :: rest ->
       find rest
   in
   let rec find_in_imports = function
-    | [] -> failwith ("Identifier not found: " ^ id)
+    | [] ->
+      failwith ("Identifier not found: " ^ id)
     | Import ext :: rest ->
       let m = get_import ext in
-      begin try
-        match alias id m.declarations with
-        | Ref r | Ext_ref (_, r) ->
-          Ext_ref (ext, r)
-        | Base _ ->
-          assert false
-      with Failure _ -> find_in_imports rest end
+      begin match find m.declarations with
+      | Some r ->
+        Ext_ref (ext, r)
+      | None ->
+        find_in_imports rest
+      end
     | _ :: rest ->
       find_in_imports rest
   in
   match find decls with
-  | Some x -> x
+  | Some x -> Ref x
+  | None -> find_in_imports decls
+
+
+and error_alias id decls : ref_t =
+  let rec find = function
+    | Error (n, _, _) :: _
+    | Error_alias (n, _, _) :: _ when n = id ->
+      Some n
+    | _ :: rest ->
+      find rest
+    | [] ->
+      None
+  in
+  let rec find_in_imports = function
+    | [] -> failwith ("Error identifier not found: " ^ id)
+    | Import ext :: rest ->
+        let m = get_import ext in
+        begin match find m.declarations with
+        | Some r ->
+          `Ext (ext, r)
+        | None ->
+          find_in_imports rest
+        end
+    | _ :: rest ->
+      find_in_imports rest
+  in
+  match find decls with
+  | Some x -> `Ref x
   | None -> find_in_imports decls
 
 
@@ -329,9 +367,7 @@ let decode_base_type = function
 let%test_unit _ =
   if not (Sys.file_exists "out") then
     Unix.mkdir "out" 0o750;
-  (*
-  let files = [ "xproto" ] in
-  *)
+  (* let files = [ "xproto" ] in *)
   List.iter files ~f:(fun file ->
     let m = mk_module file in
     let open Printf in
@@ -340,7 +376,7 @@ let%test_unit _ =
         output_string out s; output_char out '\n'
       in
       output_endline out "open X11_base\n";
-      fprintf out "module %s = struct\n" m.file_name;
+      fprintf out "(* module %s = struct *)\n" m.file_name;
       begin match m.query_extension_name with None -> () | Some x ->
         fprintf out "  let query_extension_name = %S\n" x
       end;
@@ -467,9 +503,21 @@ let%test_unit _ =
           else
             output_endline out "    ; content = fun _ _ -> () }"
 
+        | Error_alias (name, code, old) ->
+          output_char out '\n';
+          let n = snake_cased name in
+          fprintf out "  let %s_error =\n" n;
+          fprintf out "    { name = %S\n    ; code = %d\n" name code;
+          begin match old with
+          | `Ref old ->
+            fprintf out "    ; content = %s_error.content }\n" (snake_cased old)
+          | `Ext (m, old) ->
+            fprintf out "    ; content = %s.%s_error.content }\n" m (snake_cased old)
+          end
+
         | Import _ -> ()
       );
-      output_endline out "end"
+      output_endline out "(* end *)"
     in
     let out = open_out @@ Filename.concat "out" (file ^ ".ml") in
     try

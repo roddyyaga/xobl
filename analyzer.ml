@@ -21,6 +21,12 @@ let base_type_of_string = function
   | "double" -> Some Float64
   | t        -> None
 
+let size_of_base_type = function
+  | Byte | Int8 | Uint8      -> 1
+  | Int16 | Uint16           -> 2
+  | Int32 | Uint32 | Float32 -> 4
+  | Float64                  -> 8
+
 
 type enum_items = (string * int) list
 
@@ -29,19 +35,29 @@ type bitmask =
   ; flags : enum_items }
 
 
-(* FIXME: sometimes enums have the same value for 0; decide what to keep where *)
+(* FIXME: sometimes enums have the same value for 0; decide what to keep where.
+ * this only seems to happen in xproto though. *)
 
+type ref_type =
+  | Base_ref of string
+  | Enum_ref of string
+  | Bitmask_ref of string
 
-type 'a x_t =
-  | Base of 'a
-  | Alias of string
-  | Ext_alias of string * string
+type x_t =
+  | Base of base_type
+  | Ref of ref_type
+  | Ext_ref of string * ref_type
+
+type struct_item =
+  | Pad of int
+  | Field of string * base_type
 
 type declaration =
   | Import of string
-  | Type of string * base_type x_t
-  | Enum of string * enum_items x_t
-  | Bitmask of string * bitmask x_t
+  | Type of string * x_t
+  | Enum of string * enum_items
+  | Bitmask of string * bitmask
+  | Error of string * int * struct_item list
 
 type x_module =
   { file_name : string
@@ -82,23 +98,43 @@ and declaration d =
       Type (name, Base Uint32) :: acc
 
     | X.Enum (name, `Enum items, _) ->
-      Enum (name, Base items) :: acc
+      Enum (name, items) :: acc
 
     | X.Enum (name, `Bitmask { vals; bits }, _) ->
       let vals = match vals with
         | [] -> None | l -> Some l
       in
-      Bitmask (name, Base { flags = bits; vals }) :: acc
+      Bitmask (name, { flags = bits; vals }) :: acc
 
     | X.Type_alias (name, old) ->
+      begin try (* @Hack REMOVE THIS *)
       let t =
         match base_type_of_string old with
         | Some t ->
           Type (name, Base t)
         | None ->
-          alias name old acc
+          Type (name, alias old acc)
       in
       t :: acc
+      with _ -> acc end
+
+    | X.Union { switch = Some _; _ } ->
+      assert false
+
+    | X.Error { name; code; fields; _ } ->
+      let fields = List.map fields ~f:(function
+        | `Pad { X.typ = `Bytes; amount; _ } ->
+          Pad amount
+        | `Field { X.name; typ; allowed = None; _ } ->
+          let typ = match base_type_of_string typ with
+            | Some t -> t
+            | None -> failwith name
+          in
+          Field (name, typ)
+        | _ ->
+          failwith "not implemented"
+      ) in
+      Error (name, code, fields) :: acc
 
     | _ ->
       acc
@@ -106,17 +142,28 @@ and declaration d =
   List.fold_left d ~init:[] ~f:loop
 
 
-and alias name id decls =
+and alias id decls =
   let rec find = function
-    | Type (n, _) :: _ when n = id ->
-      Some (Type (name, Alias id))
+    | Type (n, Ref (Base_ref _)) :: _
+    | Type (n, Ext_ref (_, Base_ref _)) :: _
+    | Type (n, Base _) :: _ when n = id ->
+      Some (Ref (Base_ref id))
+
+    | Type (n, Ref (Enum_ref _)) :: _
+    | Type (n, Ext_ref (_, Enum_ref _)) :: _
     | Enum (n, _) :: _ when n = id ->
-      Some (Enum (name, Alias id))
+      Some (Ref (Enum_ref id))
+
+    | Type (n, Ref (Bitmask_ref _)) :: _
+    | Type (n, Ext_ref (_, Bitmask_ref _)) :: _
     | Bitmask (n, _) :: _ when n = id ->
-      Some (Bitmask (name, Alias id))
+      Some (Ref (Bitmask_ref id))
+
     | [] ->
       None
+
     | Type _ :: rest | Enum _ :: rest | Bitmask _ :: rest
+    | Error _ :: rest
     | Import _ :: rest ->
       find rest
   in
@@ -125,14 +172,10 @@ and alias name id decls =
     | Import ext :: rest ->
       let m = get_import ext in
       begin try
-        match alias name id m.declarations with
-        | Type _ ->
-          Type (name, Ext_alias (ext, id))
-        | Enum _ ->
-          Enum (name, Ext_alias (ext, id))
-        | Bitmask _ ->
-          Bitmask (name, Ext_alias (ext, id))
-        | Import _ ->
+        match alias id m.declarations with
+        | Ref r | Ext_ref (_, r) ->
+          Ext_ref (ext, r)
+        | Base _ ->
           assert false
       with Failure _ -> find_in_imports rest end
     | _ :: rest ->
@@ -276,10 +319,19 @@ let ocaml_type = function
   | Float32 | Float64 -> "float"
 
 
+let decode_base_type = function
+  | Byte | Int8 | Uint8 -> "get_byte"
+  | Int16 | Uint16 -> "get_uint16"
+  | Int32 | Uint32 -> "get_uint32"
+  | Float32 | Float64 -> failwith "not implemented"
+
+
 let%test_unit _ =
   if not (Sys.file_exists "out") then
     Unix.mkdir "out" 0o750;
+  (*
   let files = [ "xproto" ] in
+  *)
   List.iter files ~f:(fun file ->
     let m = mk_module file in
     let open Printf in
@@ -287,7 +339,7 @@ let%test_unit _ =
       let output_endline out s =
         output_string out s; output_char out '\n'
       in
-      output_endline out "type ('a, 'b) bitmask = Flags of 'a list | Val of 'b";
+      output_endline out "open X11_base\n";
       fprintf out "module %s = struct\n" m.file_name;
       begin match m.query_extension_name with None -> () | Some x ->
         fprintf out "  let query_extension_name = %S\n" x
@@ -296,41 +348,27 @@ let%test_unit _ =
         fprintf out "  let version = (%d, %d)\n" maj min
       end;
       List.iter m.declarations ~f:(function
-        | Type (n, Alias t) ->
-          let n = snake_cased n in
-          output_char out '\n';
-          fprintf out "  type %s = %s\n" n t
-        | Enum (n, Alias t) ->
-            print_endline "enum alias";
-          let n = snake_cased n in
-          output_char out '\n';
-          fprintf out "  type %s_enum = %s_enum\n" n t
-        | Bitmask (n, Alias t) ->
-            print_endline "bitmask alias";
-          let n = snake_cased n in
-          output_char out '\n';
-          fprintf out "  type %s_bitmask = %s_bitmask\n" n t
-
-        | Type (n, Ext_alias (e, t)) ->
-          let n = snake_cased n in
-          output_char out '\n';
-          fprintf out "  type %s = %s.%s\n" n e t
-        | Enum (n, Ext_alias (e, t)) ->
-            print_endline "enum ext alias";
-          let n = snake_cased n in
-          output_char out '\n';
-          fprintf out "  type %s_enum = %s.%s_enum\n" n e t
-        | Bitmask (n, Ext_alias (e, t)) ->
-            print_endline "bitmask ext alias";
-          let n = snake_cased n in
-          output_char out '\n';
-          fprintf out "  type %s_bitmask = %s.%s_bitmask\n" n e t
-
         | Type (n, Base t) ->
           let n = snake_cased n in
           output_char out '\n';
           fprintf out "  type %s = %s\n" n (ocaml_type t)
-        | Enum (n, Base items) ->
+
+        | Type (n, t) ->
+          let n = snake_cased n in
+          output_char out '\n';
+          let m, t = match t with
+            | Ref r -> "", r
+            | Ext_ref (e, r) -> (e ^ "."), r
+            | Base _ -> assert false
+          in
+          let t, suffix = match t with
+            | Base_ref t -> t, ""
+            | Enum_ref t -> t, "_enum"
+            | Bitmask_ref t -> t, "_bitmask"
+          in
+          fprintf out "  type %s%s = %s%s%s\n" n suffix m t suffix
+
+        | Enum (n, items) ->
           let n = snake_cased n ^ "_enum" in
           output_char out '\n';
           fprintf out "  type %s = [\n" n;
@@ -341,13 +379,17 @@ let%test_unit _ =
           fprintf out "  let %s_of_int32 : int32 -> %s = function\n" n n;
           List.iter (fun (n, i) -> fprintf out "    | %dl -> `%s\n" i (enum_i n)) items;
           fprintf out "    | _ -> failwith \"not recognized\"\n"
-        | Bitmask (n, Base { flags; vals }) ->
+
+        | Bitmask (n, { flags; vals }) ->
           let n = snake_cased n in
           output_char out '\n';
           fprintf out "  type %s_flag = [\n" n;
           List.iter (fun (n, _) -> output_endline out ("    | `" ^ enum_i n)) flags;
           output_endline out "  ]";
-          begin match vals with None -> () | Some vals ->
+          begin match vals with
+          | None ->
+            fprintf out "  type %s_bitmask = %s_flag list\n" n n
+          | Some vals ->
             fprintf out "  type %s_val = [\n" n;
             List.iter (fun (n, _) -> output_endline out ("    | `" ^ enum_i n)) vals;
             output_endline out "  ]";
@@ -362,7 +404,68 @@ let%test_unit _ =
           begin match vals with None -> () | Some vals ->
             fprintf out "  let int32_of_%s_val : %s_val -> int32 = function\n" n n;
             List.iter (fun (n, i) -> fprintf out "    | `%s -> %dl\n" (enum_i n) i) vals
+          end;
+          fprintf out "  let int32_of_%s_bitmask : %s_bitmask -> int32 = " n n;
+          begin match vals with
+          | None ->
+            fprintf out "int32_of_%s_flags\n" n
+          | Some _ ->
+            output_endline out "function";
+            fprintf out "    | Flags f -> int32_of_%s_flags f\n" n;
+            fprintf out "    | Val v -> int32_of_%s_val v\n" n
           end
+
+        | Error (name, code, fields) ->
+          output_char out '\n';
+          let n = snake_cased name in
+          if fields <> [] then begin
+            fprintf out "  type %s_error_content =\n" n;
+            List.iteri fields ~f:(fun i -> function
+              | Field (n, t) ->
+                let n = snake_cased n in
+                if i = 0 then
+                  fprintf out "    { %s : %s" n (ocaml_type t)
+                else
+                  fprintf out "\n    ; %s : %s" n (ocaml_type t)
+              | _ -> ()
+            );
+            output_endline out " }"
+          end;
+          begin if fields <> [] then
+            fprintf out "  let %s_error : %s_error_content error =\n" n n
+          else
+            fprintf out "  let %s_error : unit error =\n" n
+          end;
+          if fields <> [] then begin
+            output_endline out "    let read_content buf offs =";
+            let _ = List.fold_left fields ~init:0 ~f:(fun offset -> function
+              | Pad n -> offset + n
+              | Field (n, t) ->
+                let n = snake_cased n in
+                fprintf out    "      let %s = %s buf (offs + %d) in\n" n
+                  (decode_base_type t) offset;
+                offset + size_of_base_type t
+            ) in
+            List.iteri fields ~f:(fun i -> function
+              | Field (n, _) ->
+                let n = snake_cased n in
+                if i = 0 then
+                  fprintf out  "      { %s" n
+                else (
+                  output_string out "; ";
+                  output_string out n
+                )
+              | _ -> ()
+            );
+            output_endline out " }";
+            output_endline out "    in";
+          end;
+          fprintf out        "    { name = %S\n" name;
+          fprintf out        "    ; code = %d\n" code;
+          if fields <> [] then
+            output_endline out "    ; content = read_content }"
+          else
+            output_endline out "    ; content = fun _ _ -> () }"
 
         | Import _ -> ()
       );

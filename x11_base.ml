@@ -1,9 +1,15 @@
-type ('a, 'b) bitmask =
+type ('a, 'b) mask =
   | Flags of 'a list
   | Val of 'b
 
 
 type 'a error =
+  { name    : string
+  ; code    : int
+  ; content : string -> int -> 'a }
+
+
+type 'a event =
   { name    : string
   ; code    : int
   ; content : string -> int -> 'a }
@@ -31,3 +37,14 @@ let get_uint32 buf at =
 
 let get_int16 = get_uint16
 let get_int32 = get_uint32
+
+let get_bool buf at = match get_byte buf at with
+  | 0 -> false
+  | _ -> true
+
+
+let parse_error buf =
+  assert (get_byte buf 0 = 0);
+  let code = get_byte buf 1 in
+  let seq_num = get_uint16 buf 2 in
+  (code, seq_num)

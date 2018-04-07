@@ -10,8 +10,10 @@ type padding =
   { typ : pad_type
   ; amount : int
   ; serialize : bool
-  (* I really don't know what this flag does. It's only used in xkb and it's
-   * not documented. I'll have to look into xcbgen. *)
+  (* This flag is only used in xkb to mark "true", if omitted it'll always be
+   * false. The documentation mentions that it's only needed for ABI
+   * compatibility with legacy (legacy what???) and thus should not be used
+   * in new pads. I don't really know what it means. *)
   }
 
 
@@ -79,6 +81,7 @@ type field = unit field_t
 type expr_field = (expression list) field_t
 
 type list_field = (expression option) field_t
+(* The expression defines the length of the list *)
 
 
 type field_type =

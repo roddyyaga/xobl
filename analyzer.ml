@@ -4,66 +4,125 @@ open StdLabels
 open MoreLabels
 
 
-type base_type =
-  | Byte
-  | Int8  | Int16  | Int32
-  | Uint8 | Uint16 | Uint32
-  | Float32 | Float64
+let option_get_exn = function
+  | Some x -> x
+  | None -> raise Not_found
 
-let base_type_of_string = function
+
+let string_split chr str =
+  let len = String.length str in
+  let rec pos i =
+    if i >= len then
+      None
+    else if str.[i] = chr then
+      let left = String.sub str ~pos:0 ~len:(if i = 0 then 0 else i - 1) in
+      let right = String.sub str ~pos:(i + 1) ~len:(len - i - 1) in
+      Some (left, right)
+    else
+      pos (i + 1)
+  in pos 0
+
+
+(* Primitive types *)
+type prim_t =
+  | Bool
+  | Byte
+  | Int8
+  | Int16
+  | Int32
+  | Uint8
+  | Uint16
+  | Uint32
+  | Float32
+  | Float64
+
+let prim_t_of_string = function
   | "char"   -> Some Byte
   | "BYTE"   -> Some Byte
+  | "BOOL"   -> Some Bool
+  | "INT16"  -> Some Int16
   | "INT32"  -> Some Int32
   | "CARD8"  -> Some Uint8
   | "CARD16" -> Some Uint16
   | "CARD32" -> Some Uint32
   | "float"  -> Some Float32
   | "double" -> Some Float64
-  | t        -> None
+  | _        -> None
 
-let size_of_base_type = function
-  | Byte | Int8 | Uint8      -> 1
+let size_of_prim_t = function
+  | Bool | Byte  | Int8   | Uint8 -> 1
   | Int16 | Uint16           -> 2
   | Int32 | Uint32 | Float32 -> 4
   | Float64                  -> 8
 
 
-type enum_items = (string * int) list
+type enum_items =
+  (string * int) list
 
-type bitmask =
+type mask =
   { vals  : enum_items option
   ; flags : enum_items }
-
-
-(* FIXME: sometimes enums have the same value for 0; decide what to keep where.
- * this only seems to happen in xproto though. *)
-
-type ref_type =
-  | Base_ref of string
-  | Enum_ref of string
-  | Bitmask_ref of string
 
 
 type ref_t =
   [ `Ref of string
   | `Ext of string * string ]
 
-type x_t =
-  | Base of base_type
-  | Ref of ref_type
-  | Ext_ref of string * ref_type
+type basic_t =
+  [ ref_t
+  | `Prim of prim_t
+  | `Union of ref_t ]
+
+
+type binop = [ `Add | `Sub | `Mul | `Div | `Bit_and | `Bit_left_shift ]
+type unop = [ `Bit_not ]
+
+type expression =
+  | Binop of binop * expression * expression
+  | Unop of unop * expression
+  | EField of basic_t
+  | EParam of basic_t * ref_t
+  | EEnum of basic_t * ref_t
+  | Pop_count of expression
+  | Sum_of of ref_t * expression option
+  | Current_ref
+  | EValue of int
+  | EBit of int
+
 
 type struct_item =
   | Pad of int
-  | Field of string * base_type
+  | Field of string * basic_t
+  | FEnum of string * basic_t * ref_t
+  | FMask of string * basic_t * ref_t
+  | FAlt_enum of string * basic_t * ref_t
+  | FAlt_mask of string * basic_t * ref_t
+  | List of string * basic_t * expression option
+
+
+type event_opts =
+  { seq_num : bool }
+
 
 type declaration =
   | Import of string
-  | Type of string * x_t
+
+  | Type of string * prim_t
+  | Type_alias of string * ref_t
+
   | Enum of string * enum_items
-  | Bitmask of string * bitmask
-  | Error of string * int * struct_item list
+  | Enum_alias of string * ref_t
+
+  | Mask of string * mask
+  | Mask_alias of string * ref_t
+
+  | ID_union of string * ref_t list
+
+  | Error of string * int * struct_item list option
+  | Event of string * int * struct_item list option * event_opts
+
   | Error_alias of string * int * ref_t
+
 
 type x_module =
   { file_name : string
@@ -94,137 +153,79 @@ let rec module_of_file = function
     ; declarations = declaration d }
 
 
-and declaration d =
-  let loop acc = function
-    | X.Import file ->
-      let name = get_import_name file in
-      Import name :: acc
-
-    | X.X_id name ->
-      Type (name, Base Uint32) :: acc
-
-    | X.Enum (name, `Enum items, _) ->
-      Enum (name, items) :: acc
-
-    | X.Enum (name, `Bitmask { vals; bits }, _) ->
-      let vals = match vals with
-        | [] -> None | l -> Some l
-      in
-      Bitmask (name, { flags = bits; vals }) :: acc
-
-    | X.Type_alias (name, old) ->
-      begin try (* @Hack DELET THIS *)
-      let t =
-        match base_type_of_string old with
-        | Some t ->
-          Type (name, Base t)
-        | None ->
-          Type (name, alias old acc)
-      in
-      t :: acc
-      with _ -> acc end
-
-    | X.Union { switch = Some _; _ } ->
-      assert false
-
-    | X.Error { name; code; fields; _ } ->
-      let fields = List.map fields ~f:(function
-        | `Pad { X.typ = `Bytes; amount; _ } ->
-          Pad amount
-        | `Field { X.name; typ; allowed = None; _ } ->
-          let typ = match base_type_of_string typ with
-            | Some t -> t
-            | None -> failwith name
-          in
-          Field (name, typ)
-        | _ ->
-          failwith "not implemented"
-      ) in
-      Error (name, code, fields) :: acc
-
-    | X.Error_alias ((name, code), old) ->
-      let old = error_alias old acc in
-      Error_alias (name, code, old) :: acc
-
-    | _ ->
-      acc
-  in
-  List.rev @@ List.fold_left d ~init:[] ~f:loop
-
-
-and alias id decls =
-  let rec find = function
-    | Type (n, Ref (Base_ref _)) :: _
-    | Type (n, Ext_ref (_, Base_ref _)) :: _
-    | Type (n, Base _) :: _ when n = id ->
-      Some (Base_ref id)
-
-    | Type (n, Ref (Enum_ref _)) :: _
-    | Type (n, Ext_ref (_, Enum_ref _)) :: _
-    | Enum (n, _) :: _ when n = id ->
-      Some (Enum_ref id)
-
-    | Type (n, Ref (Bitmask_ref _)) :: _
-    | Type (n, Ext_ref (_, Bitmask_ref _)) :: _
-    | Bitmask (n, _) :: _ when n = id ->
-      Some (Bitmask_ref id)
-
-    | [] ->
-      None
-
-    | Type _ :: rest | Enum _ :: rest | Bitmask _ :: rest
-    | Error _ :: rest | Error_alias _ :: rest
-    | Import _ :: rest ->
-      find rest
-  in
-  let rec find_in_imports = function
-    | [] ->
-      failwith ("Identifier not found: " ^ id)
-    | Import ext :: rest ->
-      let m = get_import ext in
-      begin match find m.declarations with
-      | Some r ->
-        Ext_ref (ext, r)
-      | None ->
-        find_in_imports rest
-      end
-    | _ :: rest ->
-      find_in_imports rest
-  in
-  match find decls with
-  | Some x -> Ref x
-  | None -> find_in_imports decls
-
-
-and error_alias id decls : ref_t =
-  let rec find = function
-    | Error (n, _, _) :: _
-    | Error_alias (n, _, _) :: _ when n = id ->
-      Some n
-    | _ :: rest ->
-      find rest
-    | [] ->
-      None
-  in
-  let rec find_in_imports = function
-    | [] -> failwith ("Error identifier not found: " ^ id)
-    | Import ext :: rest ->
+and alias (find : declaration -> bool) id decls =
+  match string_split ':' id with
+  | Some (m, _) ->
+    Some (`Ext (get_import_name m, id))
+  | None ->
+    let rec find_in_imports = function
+      | Import ext :: rest ->
         let m = get_import ext in
-        begin match find m.declarations with
-        | Some r ->
-          `Ext (ext, r)
-        | None ->
+        if List.exists ~f:find m.declarations then
+          Some (`Ext (ext, id))
+        else
           find_in_imports rest
-        end
-    | _ :: rest ->
-      find_in_imports rest
-  in
-  match find decls with
-  | Some x -> `Ref x
-  | None -> find_in_imports decls
+      | _ :: rest ->
+        find_in_imports rest
+      | [] ->
+        None
+    in
+    if List.exists decls ~f:find then
+      Some (`Ref id)
+    else
+      find_in_imports decls
 
 
-(* Entry point *)
+and basic_alias id =
+  alias (function
+    | Type (n, _) | Type_alias (n, _) when n = id -> true
+    | _ -> false
+  ) id
+
+and basic_alias_exn id decls =
+  option_get_exn (basic_alias id decls)
+
+
+and enum_alias id =
+  alias (function
+    | Enum (n, _) | Enum_alias (n, _) when n = id -> true
+    | _ -> false
+  ) id
+
+and enum_alias_exn id decls =
+  option_get_exn (enum_alias id decls)
+
+
+and mask_alias id =
+  alias (function
+    | Mask (n, _) | Mask_alias (n, _) when n = id -> true
+    | _ -> false
+  ) id
+
+and mask_alias_exn id decls =
+  option_get_exn (mask_alias id decls)
+
+
+and error_alias id =
+  alias (function
+    | Error (n, _, _) | Error_alias (n, _, _) when n = id -> true
+    | _ -> false
+  ) id
+
+and error_alias_exn id decls =
+  option_get_exn (error_alias id decls)
+
+
+and id_union_alias id =
+  alias (function
+    | ID_union (n, _) when n = id -> true
+    | _ -> false
+  ) id
+
+and id_union_alias_exn id decls =
+  option_get_exn (id_union_alias id decls)
+
+
 and mk_module file =
   let fname = Filename.concat file_loc (file ^ ".xml") in
   let doc = module_of_file (Parser.parse_file fname) in
@@ -245,41 +246,114 @@ and get_import name =
   Hashtbl.find modules name
 
 
-  (*
-and module_of_type id decls : x_type =
-  let rec find = function
-    | Type (n, Base _)                  :: _
-    | Type (n, Ref (Base_ref _))        :: _
-    | Type (n, Ext_ref (_, Base_ref _)) :: _ when n = id ->
-      Some (Base_ref n)
+and event_field decls = function
+  | `Pad { X.typ = `Bytes; amount; _ } ->
+    Pad amount
 
-    | Enum (n, _)                       :: _
-    | Type (n, Ref (Enum_ref _))        :: _
-    | Type (n, Ext_ref (_, Enum_ref _)) :: _ when n = id ->
-      Some (Enum_ref n)
+  | `Field { X.name; typ; allowed = None; _ } ->
+    let t =
+      match prim_t_of_string typ
+      with Some p -> `Prim p | None ->
+      match basic_alias typ decls
+      with Some t -> (t :> basic_t) | None ->
+      `Union (id_union_alias_exn typ decls)
+    in
+    Field (name, t)
 
-    | [] ->
-      None
+  | `Field { X.name; typ; allowed = Some (a, at); _ } ->
+    let typ =
+      match prim_t_of_string typ
+      with Some p -> `Prim p | None ->
+      match basic_alias typ decls
+      with Some t -> (t :> basic_t) | None ->
+      `Union (id_union_alias_exn typ decls)
+    in
+    begin match a with
+      | `Enum -> FEnum (name, typ, enum_alias_exn at decls)
+      | `Mask -> FMask (name, typ, mask_alias_exn at decls)
+      | `Alt_enum -> FAlt_enum (name, typ, enum_alias_exn at decls)
+      | `Alt_mask -> FAlt_mask (name, typ, mask_alias_exn at decls)
+    end
 
-    | Import _ :: rest ->
-      find rest
-  in
-  let rec loop = function
-    | [] -> failwith id
-    | Import name :: rest ->
-      let m = get_import name in
+    (*
+  | `List { X.name; typ; allowed = None; value = None } ->
+    let typ =
+      match prim_t_of_string typ
+      with Some p -> `Prim p | None ->
+      match basic_alias typ decls
+      with Some t -> (t :> basic_t) | None ->
+      `Union (id_union_alias_exn typ decls)
+    in
+    *)
+
+
+  | `File_descriptor str ->
+    failwith ("unsupported field: file descriptor " ^ str)
+  | _ ->
+    failwith "unsupported field in event/error struct"
+
+
+and declaration d =
+  List.rev @@ List.fold_left d ~init:[] ~f:(fun acc -> function
+    | X.Import file ->
+      let name = get_import_name file in
+      Import name :: acc
+
+    | X.X_id name ->
+      Type (name, Uint32) :: acc
+
+    | X.Enum (name, `Enum items, _) ->
+      Enum (name, items) :: acc
+
+    | X.Enum (name, `Bitmask { vals; bits }, _) ->
+      let vals = match vals with
+        | [] -> None | l -> Some l
+      in
+      Mask (name, { flags = bits; vals}) :: acc
+
+    | X.X_id_union (name, ts) ->
+      let ts = List.map ts ~f:(fun x -> basic_alias_exn x acc) in
+      ID_union (name, ts) :: acc
+
+    | X.Type_alias (name, old) ->
+      begin
+        match prim_t_of_string old
+        with Some t -> Type (name, t) :: acc | None ->
+        match basic_alias old acc
+        with Some r -> Type_alias (name, r) :: acc | None ->
+        match enum_alias old acc
+        with Some r -> Enum_alias (name, r) :: acc | None ->
+        match mask_alias old acc
+        with Some r -> Mask_alias (name, r) :: acc | None ->
+        acc (** FIXME type_alias also marks stuct aliases *)
+      end
+
+    | X.Error { name; code; fields; _ } ->
+      let fields = match fields with [] -> None
+        | fs -> Some (List.map fs ~f:(event_field acc))
+      in
+      Error (name, code, fields) :: acc
+
+    | X.Error_alias ((name, code), old) ->
+      let old = error_alias_exn old acc in
+      Error_alias (name, code, old) :: acc
+
+    | X.Event { name; code; no_sequence_number; fields; align = None; _ } ->
       begin try
-        match module_of_type id m.declarations with
-        | Ref t | Ext_ref (_, t) -> Ext_ref (id, t)
-        | _ -> assert false
-      with Failure _ -> loop rest end
-    | _ :: rest -> loop rest
-  in
-  match find decls with
-  | Some x -> Ref x
-  | None -> loop decls
-  *)
+      let fields = match fields with [] -> None
+        | fs -> Some (List.map fs ~f:(event_field acc))
+      in
+      Event (name, code, fields, { seq_num = not no_sequence_number }) :: acc
+      with Failure x -> failwith ("event " ^ name ^ ": " ^ x)
+      | Not_found -> failwith ("event " ^ name) end
 
+    | _ ->
+      acc
+  )
+
+
+
+(* ***************************************************** *)
 
 let files =
   [ "bigreq"
@@ -329,7 +403,8 @@ let snake_cased name =
       | 'A' .. 'Z' as c ->
         (* We want to make sure something like GLXContext is turned into
          * glxcontext and not g_l_x_context.
-         * TODO: GLXContext -> glx_context instead? *)
+         * GLXContext -> glx_context instead?
+         * ^ no, because DECnet would become de_cnet.*)
         let prev = name.[i - 1] in
         if Char.lowercase_ascii prev = prev then (
           Buffer.add_char buf '_';
@@ -349,6 +424,7 @@ let enum_i name =
 
 
 let ocaml_type = function
+  | Bool -> "bool"
   | Byte -> "int"
   | Int8 | Int16 -> "int"
   | Int32 -> "int32"
@@ -358,172 +434,154 @@ let ocaml_type = function
 
 
 let decode_base_type = function
+  | Bool -> "get_bool"
   | Byte | Int8 | Uint8 -> "get_byte"
   | Int16 | Uint16 -> "get_uint16"
   | Int32 | Uint32 -> "get_uint32"
   | Float32 | Float64 -> failwith "not implemented"
 
 
+let print_struct out ~sep ?delim ~indent string_of_item items =
+  let indent = String.make indent ' ' in
+  let beg, end_ = match delim with
+    | Some (b, e) -> b, Some e | None -> sep, None
+  in
+  let rec prn = function
+    | [] -> ()
+    | hd :: tl ->
+      match string_of_item hd with
+      | None -> prn tl
+      | Some x ->
+        Printf.fprintf out "%s%c %s" indent beg x;
+        List.iter tl ~f:(fun item -> match string_of_item item with
+          | None -> ()
+          | Some x ->
+            Printf.fprintf out "\n%s%c %s" indent sep x
+        );
+        match end_ with None -> () | Some e ->
+          Printf.fprintf out " %c\n" e
+  in prn items
+
+
+let string_of_ref_t = function
+  | `Ref n -> snake_cased n
+  | `Ext (e, n) -> e ^ "." ^ snake_cased n
+
+
+let string_of_basic_t = function
+  | `Prim t -> ocaml_type t
+  | `Union r -> string_of_ref_t r ^ "_union"
+  | #ref_t as r -> string_of_ref_t r
+
+
+let gen_ocaml_module out m =
+  let pf = Printf.fprintf in
+  let ps = output_string out in
+  let pn () = output_char out '\n' in
+  let pe s = ps s; pn () in
+  pe "open X11_base\n";
+  begin match m.query_extension_name with None -> () | Some x ->
+    pf out "let query_extension_name = %S\n" x
+  end;
+  begin match m.version with None -> () | Some (maj, min) ->
+    pf out "let version = (%d, %d)\n" maj min
+  end;
+  List.iter m.declarations ~f:(
+    output_char out '\n';
+    function
+    | Import _ -> ()
+
+    | Type (n, t) ->
+      let n = snake_cased n in
+      pf out "type %s = %s\n" n (ocaml_type t)
+
+    | Enum (n, items) ->
+      let n = snake_cased n ^ "_enum" in
+      pf out "type %s =\n" n;
+      print_struct out (fun (n, _) -> Some ("`" ^ enum_i n)) items
+        ~sep:'|' ~delim:('[',']') ~indent:2
+
+    | Mask (n, { flags; vals }) ->
+      let n = snake_cased n in
+      pf out "type %s_flag =\n" n;
+      print_struct out (fun (n, _) -> Some ("`" ^ enum_i n)) flags
+        ~sep:'|' ~delim:('[',']') ~indent:2;
+      begin match vals with
+        | None ->
+          pf out "type %s_mask = %s_flag list\n" n n
+        | Some vals ->
+          pf out "type %s_val =\n" n;
+          print_struct out (fun (n, _) -> Some ("`" ^ enum_i n)) vals
+            ~sep:'|' ~delim:('[',']') ~indent:2;
+          pf out "type %s_mask = (%s_flag, %s_val) mask\n" n n n
+      end
+
+    | ID_union (n, ts) ->
+      let n = snake_cased n in
+      pf out "type %s_union =\n" n;
+      print_struct out (fun n -> Some ("`" ^ string_of_ref_t n ^ " of int32")) ts
+        ~sep:'|' ~delim:('[',']') ~indent:2
+
+    | Type_alias (n, t) ->
+      let n = snake_cased n in
+      pf out "type %s = %s\n" n (string_of_ref_t t)
+
+    | Enum_alias (n, t) ->
+      let n = snake_cased n in
+      pf out "type %s_enum = %s_enum\n" n (string_of_ref_t t)
+
+    | Mask_alias (n, t) ->
+      let n = snake_cased n in
+      pf out "type %s_mask = %s_mask\n" n (string_of_ref_t t)
+
+    | Error_alias (name, code, old) ->
+      let n = snake_cased name in
+      pf out "let %s_error =\n" n;
+      pf out "  { name = %S\n  ; code = %d\n" name code;
+      pf out "  ; content = %s_error.content }\n" (string_of_ref_t old)
+
+    | Error (name, code, fields) ->
+      let n = snake_cased name in
+      begin match fields with Some fields ->
+        pf out "type %s_error_content =\n" n;
+        print_struct out (function
+          | Pad _ -> None
+          | Field (n, t) ->
+            Some (snake_cased n ^ " : " ^ string_of_basic_t t)
+          | FEnum (n, t, r) ->
+            Some (snake_cased n ^ " : " ^ string_of_ref_t r ^ "_enum")
+          | FMask (n, t, r) ->
+            Some (snake_cased n ^ " : " ^ string_of_ref_t r ^ "_mask")
+          | FAlt_enum (n, t, r) ->
+            Some (snake_cased n ^ " : " ^ string_of_ref_t r ^ "_alt_enum")
+          | FAlt_mask (n, t, r) ->
+            Some (snake_cased n ^ " : " ^ string_of_ref_t r ^ "_alt_mask")
+        ) fields ~sep:';' ~delim:('{','}') ~indent:2;
+        pf out "let %s_error =\n" n;
+        pe     "  let read_content buf offs =";
+        pe     "    () in"; (** FIXME we need type size info *)
+        pf out "  { name = %S\n  ; code = %d\n" name code;
+        pf out "  ; content = read_content }\n"
+      | None ->
+        pf out "let %s_error : unit error =\n" n;
+        pf out "  { name = %S\n  ; code = %d\n" name code;
+        pf out "  ; content = fun _ _ -> () }\n"
+      end
+
+    | Event _ -> ()
+  )
+
+
+
 let%test_unit _ =
   if not (Sys.file_exists "out") then
     Unix.mkdir "out" 0o750;
-  (* let files = [ "xproto" ] in *)
-  List.iter files ~f:(fun file ->
-    let m = mk_module file in
-    let open Printf in
-    let print_file out =
-      let output_endline out s =
-        output_string out s; output_char out '\n'
-      in
-      output_endline out "open X11_base\n";
-      fprintf out "(* module %s = struct *)\n" m.file_name;
-      begin match m.query_extension_name with None -> () | Some x ->
-        fprintf out "  let query_extension_name = %S\n" x
-      end;
-      begin match m.version with None -> () | Some (maj, min) ->
-        fprintf out "  let version = (%d, %d)\n" maj min
-      end;
-      List.iter m.declarations ~f:(function
-        | Type (n, Base t) ->
-          let n = snake_cased n in
-          output_char out '\n';
-          fprintf out "  type %s = %s\n" n (ocaml_type t)
-
-        | Type (n, t) ->
-          let n = snake_cased n in
-          output_char out '\n';
-          let m, t = match t with
-            | Ref r -> "", r
-            | Ext_ref (e, r) -> (e ^ "."), r
-            | Base _ -> assert false
-          in
-          let t, suffix = match t with
-            | Base_ref t -> t, ""
-            | Enum_ref t -> t, "_enum"
-            | Bitmask_ref t -> t, "_bitmask"
-          in
-          fprintf out "  type %s%s = %s%s%s\n" n suffix m t suffix
-
-        | Enum (n, items) ->
-          let n = snake_cased n ^ "_enum" in
-          output_char out '\n';
-          fprintf out "  type %s = [\n" n;
-          List.iter (fun (n, _) -> output_endline out ("    | `" ^ enum_i n)) items;
-          output_endline out "  ]";
-          fprintf out "  let int32_of_%s : %s -> int32 = function\n" n n;
-          List.iter (fun (n, i) -> fprintf out "    | `%s -> %dl\n" (enum_i n) i) items;
-          fprintf out "  let %s_of_int32 : int32 -> %s = function\n" n n;
-          List.iter (fun (n, i) -> fprintf out "    | %dl -> `%s\n" i (enum_i n)) items;
-          fprintf out "    | _ -> failwith \"not recognized\"\n"
-
-        | Bitmask (n, { flags; vals }) ->
-          let n = snake_cased n in
-          output_char out '\n';
-          fprintf out "  type %s_flag = [\n" n;
-          List.iter (fun (n, _) -> output_endline out ("    | `" ^ enum_i n)) flags;
-          output_endline out "  ]";
-          begin match vals with
-          | None ->
-            fprintf out "  type %s_bitmask = %s_flag list\n" n n
-          | Some vals ->
-            fprintf out "  type %s_val = [\n" n;
-            List.iter (fun (n, _) -> output_endline out ("    | `" ^ enum_i n)) vals;
-            output_endline out "  ]";
-            fprintf out "  type %s_bitmask = (%s_flag, %s_val) bitmask\n" n n n
-          end;
-          fprintf out "  let int32_of_%s_flags : %s_flag list -> int32 =\n" n n;
-          output_endline out "    List.fold_left (fun acc -> function";
-          List.iter (fun (n, i) ->
-            fprintf out "      | `%s -> Int32.(logor (shift_left 1l %d) acc)\n" (enum_i n) i
-          ) flags;
-          output_endline out "    ) 0l";
-          begin match vals with None -> () | Some vals ->
-            fprintf out "  let int32_of_%s_val : %s_val -> int32 = function\n" n n;
-            List.iter (fun (n, i) -> fprintf out "    | `%s -> %dl\n" (enum_i n) i) vals
-          end;
-          fprintf out "  let int32_of_%s_bitmask : %s_bitmask -> int32 = " n n;
-          begin match vals with
-          | None ->
-            fprintf out "int32_of_%s_flags\n" n
-          | Some _ ->
-            output_endline out "function";
-            fprintf out "    | Flags f -> int32_of_%s_flags f\n" n;
-            fprintf out "    | Val v -> int32_of_%s_val v\n" n
-          end
-
-        | Error (name, code, fields) ->
-          output_char out '\n';
-          let n = snake_cased name in
-          if fields <> [] then begin
-            fprintf out "  type %s_error_content =\n" n;
-            List.iteri fields ~f:(fun i -> function
-              | Field (n, t) ->
-                let n = snake_cased n in
-                if i = 0 then
-                  fprintf out "    { %s : %s" n (ocaml_type t)
-                else
-                  fprintf out "\n    ; %s : %s" n (ocaml_type t)
-              | _ -> ()
-            );
-            output_endline out " }"
-          end;
-          begin if fields <> [] then
-            fprintf out "  let %s_error : %s_error_content error =\n" n n
-          else
-            fprintf out "  let %s_error : unit error =\n" n
-          end;
-          if fields <> [] then begin
-            output_endline out "    let read_content buf offs =";
-            let _ = List.fold_left fields ~init:0 ~f:(fun offset -> function
-              | Pad n -> offset + n
-              | Field (n, t) ->
-                let n = snake_cased n in
-                fprintf out    "      let %s = %s buf (offs + %d) in\n" n
-                  (decode_base_type t) offset;
-                offset + size_of_base_type t
-            ) in
-            List.iteri fields ~f:(fun i -> function
-              | Field (n, _) ->
-                let n = snake_cased n in
-                if i = 0 then
-                  fprintf out  "      { %s" n
-                else (
-                  output_string out "; ";
-                  output_string out n
-                )
-              | _ -> ()
-            );
-            output_endline out " }";
-            output_endline out "    in";
-          end;
-          fprintf out        "    { name = %S\n" name;
-          fprintf out        "    ; code = %d\n" code;
-          if fields <> [] then
-            output_endline out "    ; content = read_content }"
-          else
-            output_endline out "    ; content = fun _ _ -> () }"
-
-        | Error_alias (name, code, old) ->
-          output_char out '\n';
-          let n = snake_cased name in
-          fprintf out "  let %s_error =\n" n;
-          fprintf out "    { name = %S\n    ; code = %d\n" name code;
-          begin match old with
-          | `Ref old ->
-            fprintf out "    ; content = %s_error.content }\n" (snake_cased old)
-          | `Ext (m, old) ->
-            fprintf out "    ; content = %s.%s_error.content }\n" m (snake_cased old)
-          end
-
-        | Import _ -> ()
-      );
-      output_endline out "(* end *)"
-    in
-    let out = open_out @@ Filename.concat "out" (file ^ ".ml") in
+  List.iter files ~f:begin fun file ->
+    let out = open_out @@ Filename.concat "out" @@ file ^ ".ml" in
     try
-      print_file out;
+      gen_ocaml_module out (mk_module file);
       close_out out
     with exn ->
       close_out out;
       raise exn
-  )
+  end

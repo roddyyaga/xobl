@@ -1,14 +1,51 @@
-(** Documentation is not supported yet. *)
-type doc = string
+(** The purpose of the Parser is to parse the XML specification into
+ * semantically equivalent OCaml structure, with little to no change and
+ * preserving all information. Information that can be inferred without
+ * analyzing other declarations should preferably be inferred here. *)
 
+(** I should probably clarify some of the concepts that are introduced in the
+ * spec here, because the official documentation sure as hell doesn't.
+ *
+ * "Types" are used for two different purposes in the spec, but the
+ * documentation doesn't make much of a distinction between these purposes and
+ * often uses them interchangeably. I'll try to clear that up here.
+ * There's essentially three kinds of "types" in the X11 spec:
+ * - basic types
+ * - enumerated types
+ * - composite types
+ *
+ * Basic types are stuff like uint8, float32, bool, etc.; they're all
+ * different representation of numbers. Their purpose is mostly to define the
+ * wire representation of the numbers of that type, i.e. the size in bytes and
+ * how to parse and serialize them.
+ * XIDs and XID unions are included in this category, because they all map to
+ * u32.
+ *
+ * Enumerated types, to which enums and masks belong, are used to constrain the
+ * values that a request may take. They may be used to offer some useful
+ * named defaults, or to make sure that you don't send a request that contains
+ * an illegal value.
+ * Enumerated types don't have a default wire representation: they have to be
+ * assigned a basic type to be used anywhere. Basically this means that
+ * we'll have to keep track of all the basic types assigned to a certain enum
+ * throughout the codebase and generate multiple conversion functions as
+ * needed.
+ * Types belonging to this category are enums and masks.
+ *
+ * Composite types are the structs. Like primitive types, their purpose is to
+ * define the wire representation of a record of values. They include
+ * information such as the order of the values, padding bytes, alignment of
+ * certain values, and more. [FINISH THIS]
+ * *)
+
+
+type pad =
+  [ `Bytes of int
+  | `Align of int ]
 
 (** Padding bytes in a packet. *)
-type pad_type =
-  [ `Bytes | `Align ]
-
 type padding =
-  { typ : pad_type
-  ; amount : int
+  { pad       : pad
   ; serialize : bool
   (* This flag is only used in xkb to mark "true", if omitted it'll always be
    * false. The documentation mentions that it's only needed for ABI
@@ -30,85 +67,117 @@ type required_start_align =
   ; offset : int option }
 
 
-(** Unary and binary operations. *)
-type op = [ `Add | `Sub | `Mul | `Div | `Bit_and | `Bit_left_shift ]
-type unop = [ `Bit_not ]
+(* Unsupported right now. *)
+type doc = unit
 
 
-(** An expression that yields a value. *)
+type enum_items = (string * int) list
+
+type mask =
+  { vals  : enum_items
+  ; flags : enum_items }
+
+type enum =
+  [ `Mask of mask
+  (** Masks are can have both "bit" and "value" items, where the bit items
+   * are the 0-based position of the bit in the bitmask (e.g. 2 is 1 << 2),
+   * and the value items are useful predefined values. *)
+  | `Enum of enum_items
+  (** Simple mappings from constants to ints. *)
+  ]
+
+
+type binop =
+  [ `Add | `Sub | `Mul | `Div
+  | `Bit_and | `Bit_left_shift ]
+
+type unop =
+  [ `Bit_not ]
+
 type expression =
-  [ `Op of op * (expression * expression)
+  [ `Binop of binop * expression * expression
     (** Perform a binary operation on the results of the expressions. *)
   | `Unop of unop * expression
     (** Perform a unary operation on the result of the expression. *)
   | `Field_ref of string
     (** The value of another field in the same structure. *)
   | `Param_ref of string * string
-    (** The value of a field in a structure that contains the current one. [type, name] *)
-  | `Enum_ref of string * string
-    (** The value of an identifier in an enum. [type, name] *)
-  | `Population_count of expression
-    (** The number of set bits. (e.g. 0b01101 -> 3) *)
+    (** The value of a field in a structure that contains the current one.
+     * (name, type) *)
+  | `Enum_ref  of string * string
+    (** The value of an identifier in an enum.
+     * (enum, item) *)
   | `Sum_of of string * expression option
-    (** Sum of the elements in a list field. *)
+    (** Sum of the elements in a list field. The expression, if present,
+     * should be applied to each list element in the element's context before
+     * summing it. *)
   | `Current_ref
     (** The current element in a Sum_of expression. *)
+  | `Pop_count of expression
+    (** The number of set bits. (e.g. 0b01101 -> 3) *)
   | `Value of int
     (** A literal value. *)
   | `Bit of int
-    (** A literal bitmask index. *)
+    (** A literal mask index. *)
   ]
 
 
-type allowed_val =
-  [ `Enum | `Mask
-  (** The field ONLY allows values belonging to these enums. *)
-  | `Alt_enum | `Alt_mask
-  (** The fields take any value of the referenced types, but the enums
-   * referenced may provide some defaults with special meaning. *)
-  ]
+type allowed_vals =
+  [ `Enum of string
+  | `Mask of string
+  | `Alt_enum of string
+  | `Alt_mask of string ]
 
-
-type 'a field_t =
-  { name    : string
-  ; typ     : string
-  ; allowed : (allowed_val * string) option
-  ; value   : 'a }
-
-
-type field = unit field_t
-
-type expr_field = (expression list) field_t
-
-type list_field = (expression option) field_t
-(* The expression defines the length of the list *)
-
-
+(** The type of a field is defined by two things: the concrete type,
+ * which could be any basic type or a XID union, and an enum or mask, if
+ * present.
+ * When [allowed] is empty, the type will be the one in the * [typ] field.
+ * When [allowed] contains either Enum or Mask, the field will only accept
+ * values from that enum or mask, and the [typ] field will only serve to decide
+ * how to serialize and parse the value.
+ * When it is Alt_enum or Alt_mask, the field will accept both values from
+ * the enum and raw values of the type indicated by [typ]. The enum/mask values
+ * will be serialized based on [typ] like above. *)
 type field_type =
-  [ `File_descriptor of string
-  | `Pad of padding
-  | `Field of field
-  | `List of list_field
-  | `Expr of expr_field
-  (** This should only be used in a request struct description. *)
+  { typ     : string
+  ; allowed : allowed_vals option }
+
+
+type static_field =
+  [ `Pad of padding
+  | `Field of string * field_type
+  | `List of string * field_type * expression
+  (** The expression defines the length of the list. *)
+  | `File_descriptor of string ]
+
+type dynamic_field =
+  [ static_field
+  | `List_var of string * field_type
+  (** A list of variable length. It is only present in structs that don't
+   * have a fixed size (generic events and requests) and it's the last element
+   * of the struct. *)
+  ]
+
+type request_field =
+  [ dynamic_field
+  | `Expr of string * field_type * expression
+  (** A field whose value is computed based on the other fields. *)
   ]
 
 
-type case_type =
-  [ `Bit
-  (** In a switch, the contained fields are included if
-   * switch expression & bitcase expression != 0 *)
-  | `Int
-  (** In a switch, the contained fields are included if
-   * switch expression == case expression *)
+
+type cond =
+  [ `Bit_and of expression
+  (** Test that the switch expression & the case expression != 0 *)
+  | `Eq of expression
+  (** Test that the switch expression == the case expression *)
   ]
 
 (** A field that uses an expression to determine which fields are included in
  * the enclosing struct. *)
 type switch =
-  { name  : string
-  ; expr  : expression
-  ; align : required_start_align option
+  { align : required_start_align option
+  ; cond : cond
   ; cases : case list }
 
 (** Essentially an if statement which uses an operation that takes the
@@ -116,27 +185,37 @@ type switch =
  * contains in the switch if it's true.
  * If there are multiple expressions, they should be chained with ORs. *)
 and case =
-  { typ     : case_type
-  ; name_c  : string option
+  { exprs : expression list
+  ; name : string option
   (* Why would a case expression ever need a goddamn name?
    * What is it for? XInput only knows. *)
-  ; exprs   : expression list
   ; align_c : required_start_align option
-  ; fields  : field_type list
-  ; switch  : switch option }
+  ; fields : static_field list
+  ; switch : (string * switch) option }
 
 
-type x_struct =
-  { name   : string
-  ; fields : field_type list
-  ; switch : switch option
-  (* Thanks to Xinput, we also need to handle structs with fields that may
-   * or may not be there. I guess we can handle those with option types in
-   * OCaml. *)
-  }
+
+(** A 32-byte struct. The first byte contains the code in the first 7 least
+ * significant bits and a flag in the most significant that is set when the
+ * event was generated from a SendEvent request.
+ * Its third and fourth bytes contain the least significant bits of the
+ * sequence number of the last request issued by the client.
+ * The code is 7-bit. *)
+type event =
+  { no_sequence_number : bool
+  (** A special case for the KeymapNotify event in xproto, which signals that
+   * the event struct does not contain a sequence number. *)
+  ; align  : required_start_align option
+  ; fields : static_field list }
+
+(** The same as a normal event, but can also contain lists with no specified
+ * length. *)
+type generic_event =
+  { no_sequence_number : bool
+  ; align  : required_start_align option
+  ; fields : dynamic_field list }
 
 
-(** Defines what events may be sent. *)
 type allowed_events =
   { extension    : string
   (** The extension the events are defined in. *)
@@ -145,156 +224,108 @@ type allowed_events =
   }
 
 
-type request_struct =
-  { align  : required_start_align option
-  ; fields : field_type list
-  ; switch : switch option
-  ; doc    : doc option }
-
-type request =
-  { name : string
-  ; opcode : int
-  ; combine_adjacent : bool
-  ; params : request_struct
-  ; reply : request_struct option }
-
-
 (** A 32-byte struct. Its first byte is 0 to differentiate it from events,
  * the second contains the error code and the third and fourth contain
- * the least significant bits of the sequence number of the request. *)
+ * the least significant bits of the sequence number of the request.
+ * The code is 8-bit, unlike in events. *)
 type error =
-  { name   : string
-  ; code   : int
-  (** The 8-bit code that identifies the event. *)
-  ; align  : required_start_align option
-  ; fields : field_type list }
+  { align  : required_start_align option
+  ; fields : static_field list }
 
 
-(** A 32-byte struct. The first byte contains the code in the first 7 least
- * significant bits and a flag in the most significant that is set when the
- * event was generated from a SendEvent request.
- * Its third and fourth bytes contain the least significant bits of the
- * sequence number of the last request issued by the client. *)
-type event =
-  { name : string
-  ; code : int
-  (** The 7-bit code that identifies the event. *)
-  ; no_sequence_number : bool
-  (** A special case for the KeymapNotify event in xproto, which signals that
-   * the event struct does not contain a sequence number. *)
-  ; align  : required_start_align option
-  ; fields : field_type list
-  ; doc    : doc option }
+type struct_fields =
+  { fields : static_field list
+  ; switch : (string * switch) option }
 
 
-type enum_item = string * int
+type request_fields =
+  { align  : required_start_align option
+  ; fields : request_field list
+  ; switch : (string * switch) option }
 
-type enum_bitmask =
-  { bits : enum_item list
-  ; vals : enum_item list }
-
-(** Used both for bitmasks and enums that represent values. *)
-type enum =
-  [ `Bitmask of enum_bitmask
-  (** Bitmasks are can have both "bit" and "value" items, where the bit items
-   * are the 0-based position of the bit in the bitmask (e.g. 2 is 1 << 2),
-   * and the value items are useful predefined values. *)
-  | `Enum of enum_item list
-  (** Simple mappings from constants to ints. *)
-  ]
+type reply =
+  { align  : required_start_align option
+  ; fields : dynamic_field list
+  ; switch : (string * switch) option }
 
 
+type request =
+  { combine_adjacent : bool
+  (** Whether multiple requests can be combined without affecting the
+   * semantics of the request. *)
+  ; params : request_fields * doc option
+  ; reply  : (reply * doc option) option }
 
-(* Base types and their mappings:
- * CARD8  -> u8
- * CARD16 -> u16
- * CARD32 -> u32
- * CARD64 -> u64
- * INT8   -> i8
- * INT16  -> i16
- * INT32  -> i32
- * INT64  -> i64
- * BYTE   -> char/byte
- * BOOL   -> boolean
- *)
 
 
 type declaration =
   | Import of string
-  (** Let an extension reference the types declared in another extension.
-   * The string is the same as the "name" field of the extension info of the
+  (** Expose the types declared in another extension to the current one.
+   * The argument is the "file_name" field in the extension_info of the
    * referenced module. *)
-  (* The documentation states that types from xproto are implicitly imported,
-   * but that's a lie. In version 1.0 RC2 all the implicit xproto declarations
-   * were made explicit. *)
 
   | X_id of string
   (** Declare a type alias to u32 representing a generic X resource ID. *)
 
-  | Type_alias of string * string
-  (** Alias a type to a new name. [new, old] *)
-
-  | Event_alias of (string * int) * string
-  (** Alias an event with a new event name and number. [(new, num), old] *)
-
-  | Error_alias of (string * int) * string
-  (** Alias an error with a new error name and number. [(new, num), old] *)
-
   | X_id_union of string * string list
-  (** Declare an union type of X resources, which should be valid XIDs. *)
+  (** Declare an union type of XIDs. *)
 
   | Enum of string * enum * doc option
-  (** Declare an enum. See the documentation for the enum type above. *)
+  (** Declare an enum or a bit mask. *)
 
-  | Struct of x_struct
+  | Type_alias of string * string
+  (** Alias a type (basic type, XID union or enum/mask) to a new name.
+   * (new, old) *)
+
+  | Event of string * int * event * doc option
+  (** Something happened on the X server, and the client was informed.
+   * For most events we only need to generate the parsing code, but we need to
+   * be able to serialize those defined in event structs. *)
+
+  | Generic_event of string * int * generic_event * doc option
+  (** Generic events are events that don't have a fixed size. They have a
+   * completely separate namespace from normal ones, so we need to account
+   * for collisions. *)
+
+  | Event_struct of string * allowed_events list
+  (** Events that we need to be able to serialize. This creates a new struct
+    * type that can be used in requests and such. *)
+
+  | Event_alias of string * int * string
+  (** Alias an event with a new event name and number. (new, num, old) *)
+
+  | Error of string * int * error
+  (** Something went wrong with a request made by the client. These only need
+   * to be parsed. *)
+
+  | Error_alias of string * int * string
+  (** Alias an error with a new event name and number. (new, num, old) *)
+
+  | Struct of string * struct_fields
   (** Declare a data structure. Clients are probably expected to be able to
    * both encode and decode them, but we could also analyze their usage and
    * only output code for either encoding or decoding (or none, if they're
    * never used). *)
 
-  | Union of x_struct
-  (** Basically tagged unions. They're being phased out in favor of
-   * switch fields, so we could probably try to fold them as switches into
-   * the structs that use them? *)
+  | Union of string * static_field list
+  (** Represents a field in another struct that may be any one of the fields
+   * listed in the union. It should be as big as the biggest element in the
+   * list. *)
 
-  | Event of event
-  (** An event received by the X server. For most events we only need to
-   * generate code that parses them, but for those defined in Event_structs
-   * we also need to be able to create them. *)
-
-  | Error of error
-  (** Signals the client that there was a problem with a request it sent.
-   * We only need to be able to parse these correctly. *)
-
-  | Generic_event of event
-  (** Generic events are events that don't have a fixed length. I'm pretty sure
-   * they have a completely separate namespace from normal ones. *)
-
-  | Event_struct of string * allowed_events list
-  (** SendExtensionEvent from XInput needs to be able to send events as though
-   * they were received over the wire, so event structs define which events
-   * the client should be able to recreate. *)
-  (* XXX what is the first argument? *)
-  (* Yet another extension to the spec hand-crafted for a single request
-   * in XInput. I'm starting to hate XInput. *)
-
-  | Request of request
+  | Request of string * int * request
   (** A request the client makes to the server. Should be encoded as a function
    * that takes whatever parameters are listed in the params field.
    * Some requests send a reply back to the client. *)
 
 
-(** Extension information containing their name and version.
- * This is not present in the xproto file containing the core protocol
- * specification. *)
 type extension_info =
-  { file : string
-  (** The filename of the extension's XML description file. *)
-
-  ; name : string
+  { name : string
   (** The extension name in camelcase. *)
 
-  ; xname : string
+  ; file_name : string
+  (** The filename of the extension's XML description file. *)
+
+  ; query_name : string
   (** Name used by QueryExtension whether the extension is supported on a
    * given server. *)
 
@@ -305,7 +336,7 @@ type extension_info =
    * attribute to define the exact C name prefix. *)
 
   ; version : int * int
-  (** major * minor version. *)
+  (** (major, minor) version *)
   }
 
 

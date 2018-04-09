@@ -9,3 +9,5 @@ Stuff to infer in the Analyzer:
 * in type aliases, whether the type it references is a basic type, an enum, a mask or a struct
 * the size in bytes of every type, enum, mask, and struct
 * for enums and masks, which types we need to generate conversion functions for (e.g. `x_mask_of_int32` or `x_mask_of_int`)
+* build a DAG to figure out in which order the declarations should be output
+  - alternatively submit a patch upstream to fix the order of the declarations

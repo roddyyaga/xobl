@@ -1,8 +1,8 @@
 (jbuild_version 1)
 
 (library
- ((name analyzer)
+ ((name parser)
   (libraries (xml-light unix))
   (inline_tests
    ((deps ((glob_files xproto/src/*.xml)))))
-  (preprocess (pps (ppx_deriving.std ppx_inline_test)))))
+  (preprocess (pps (ppx_inline_test)))))

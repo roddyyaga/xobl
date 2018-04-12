@@ -53,7 +53,7 @@ module StrMap = MoreLabels.Map.Make(String)
 
 
 module Pass_1 = struct
-  (** In which we load every extension and abstract imports into the extension
+  (* In which we load every extension and abstract imports into the extension
    * information. *)
 
   type declaration =
@@ -125,7 +125,7 @@ end
 
 
 module Pass_2 = struct
-  (** In which we separate Enum declarations into enums and masks.  *)
+  (* In which we separate Enum declarations into enums and masks.  *)
   module P = Pass_1
 
   type declaration =
@@ -192,7 +192,7 @@ end
 
 
 module Pass_3 = struct
-  (** In which we get rid of the notion of XIDs.  *)
+  (* In which we get rid of XIDs.  *)
   module P = Pass_2
 
   type declaration =
@@ -258,7 +258,7 @@ end
 
 
 module Pass_4 = struct
-  (** In which we resolve the type aliases to primitive types. *)
+  (* In which we resolve the type aliases to primitive types. *)
   module P = Pass_3
 
   type prim =
@@ -350,7 +350,7 @@ end
 
 
 module Pass_5 = struct
-  (* In which we resolve the types of all aliases. *)
+  (* In which we resolve all type aliases. *)
   module P = Pass_4
 
   type prim = P.prim
@@ -464,6 +464,211 @@ module Pass_5 = struct
 end
 
 
+module Pass_6 = struct
+  (* In which we resolve event structs. *)
+  module P = Pass_5
+
+  type prim = P.prim
+
+  type x_type = P.x_type
+
+  type declaration_p6 =
+    | Prim of string * prim
+    | Enum of string * X.enum_items
+    | Mask of string * X.mask
+    | Card32_union of string * string list
+    | Struct of string * X.struct_fields
+    | Union of string * X.static_field list
+    | Event_struct of string * P.ref_t list
+
+    | Alias of string * x_type
+
+    | Event of string * int * X.event
+    | Generic_event of string * int * X.generic_event
+    | Event_alias of string * int * string
+
+    | Error of string * int * X.error
+    | Error_alias of string * int * string
+
+    | Request of string * int * X.request
+
+
+  let gather_events max min acc : P.declaration -> string list = function
+    | P.Event (name, c, _) when c >= min && c <= max -> name :: acc
+    | _ -> acc
+
+
+  let resolve (exts : P.extension StrMap.t) : P.declaration -> declaration_p6 = function
+    | P.Event_struct (name, events) ->
+      let evs = ListLabels.map events ~f:(fun { X.extension; opcode_range = (r1, r2) } ->
+        (* For some reason event struct refers to an extension by its name
+         * rather than its filename, so we have no choice but to find the
+         * module like this. *)
+        let ext_id, ext = option_get_exn @@ StrMap.fold exts ~init:None
+          ~f:(fun ~key:id ~data:ext -> function
+            | Some x -> Some x
+            | None -> if ext.P.name = extension then Some (id, ext) else None
+          ) in
+        (* The order is supposedly min, max but you can never be too sure. *)
+        let max, min = if r1 > r2 then r1, r2 else r2, r1 in
+        List.fold_left (gather_events max min) [] ext.P.declarations
+        |> List.map (fun x -> P.Ext (ext_id, x))
+      ) in
+      Event_struct (name, List.flatten evs)
+
+    | P.Prim (x1, x2)               -> Prim (x1, x2)
+    | P.Enum (x1, x2)               -> Enum (x1, x2)
+    | P.Mask (x1, x2)               -> Mask (x1, x2)
+    | P.Card32_union (x1, x2)       -> Card32_union (x1, x2)
+    | P.Alias (x1, x2)              -> Alias (x1, x2)
+    | P.Event (x1, x2, x3)          -> Event (x1, x2, x3)
+    | P.Generic_event (x1, x2, x3)  -> Generic_event (x1, x2, x3)
+    | P.Event_alias (x1, x2, x3)    -> Event_alias (x1, x2, x3)
+    | P.Error (x1, x2, x3)          -> Error (x1, x2, x3)
+    | P.Error_alias (x1, x2, x3)    -> Error_alias (x1, x2, x3)
+    | P.Struct (x1, x2)             -> Struct (x1, x2)
+    | P.Union (x1, x2)              -> Union (x1, x2)
+    | P.Request (x1, x2, x3)        -> Request (x1, x2, x3)
+
+
+  type extension_p6 =
+    { name         : string
+    ; file_name    : string
+    ; query_name   : string option
+    ; version      : (int * int) option
+    ; imports      : string list
+    ; declarations : declaration_p6 list }
+
+
+  let folder exts ~key:(ext_id : string) ~data:(ext : P.extension) acc =
+    let decls = List.map (resolve exts) ext.declarations in
+    let ext =
+      { name = ext.name; file_name = ext.file_name
+      ; query_name = ext.query_name; version = ext.version
+      ; imports = ext.imports
+      ; declarations = decls } in
+    StrMap.add acc ~key:ext_id ~data:ext
+
+
+  let resolve_event_structs (exts : P.extension StrMap.t) : extension_p6 StrMap.t =
+    StrMap.fold exts ~init:StrMap.empty ~f:(folder exts)
+end
+
+
+module Pass_7 = struct
+  (* In which we resolve the event and error aliases. *)
+  module P = Pass_6
+
+  type ref_t = Pass_5.ref_t
+
+  type prim = P.prim
+
+  type x_type = P.x_type
+
+  type declaration_p7 =
+    | Prim of string * prim
+    | Enum of string * X.enum_items
+    | Mask of string * X.mask
+    | Card32_union of string * string list
+    | Struct of string * X.struct_fields
+    | Union of string * X.static_field list
+    | Event_struct of string * ref_t list
+
+    | Alias of string * x_type
+    | Event_alias of string * int * ref_t
+    | Generic_event_alias of string * int * ref_t
+    | Error_alias of string * int * ref_t
+
+    | Event of string * int * X.event
+    | Generic_event of string * int * X.generic_event
+    | Error of string * int * X.error
+    | Request of string * int * X.request
+
+
+  let find_event name = function
+    | P.Event (n, _, _) when n = name -> true
+    | _ -> false
+
+
+  let find_generic_event name = function
+    | P.Generic_event (n, _, _) when n = name -> true
+    | _ -> false
+
+
+  let find_error name = function
+    | P.Error (n, _, _) when n = name -> true
+    | _ -> false
+
+
+  let resolve exts curr_ext : P.declaration_p6 -> declaration_p7 = function
+    | P.Event_alias (name, code, old) ->
+      if List.exists (find_event old) curr_ext.P.declarations then
+        Event_alias (name, code, Pass_5.Ref old)
+      else if List.exists (find_generic_event old) curr_ext.P.declarations then
+        Generic_event_alias (name, code, Pass_5.Ref old)
+      else
+        curr_ext.imports |> list_get_exn (fun ext_id ->
+          let ext = StrMap.find ext_id exts in
+          if List.exists (find_event old) ext.P.declarations then
+            Some (Event_alias (name, code, Pass_5.Ext (ext_id, old)))
+          else if List.exists (find_generic_event old) ext.P.declarations then
+            Some (Generic_event_alias (name, code, Pass_5.Ext (ext_id, old)))
+          else
+            None
+        )
+
+    | P.Error_alias (name, code, old) ->
+      let old =
+        if List.exists (find_error old) curr_ext.P.declarations then
+          Pass_5.Ref old
+        else
+          curr_ext.imports |> list_get_exn (fun ext_id ->
+            let ext = StrMap.find ext_id exts in
+            if List.exists (find_error old) ext.P.declarations
+            then Some (Pass_5.Ext (ext_id, old)) else None
+          )
+      in Error_alias (name, code, old)
+
+    | P.Prim (x1, x2)               -> Prim (x1, x2)
+    | P.Enum (x1, x2)               -> Enum (x1, x2)
+    | P.Mask (x1, x2)               -> Mask (x1, x2)
+    | P.Card32_union (x1, x2)       -> Card32_union (x1, x2)
+    | P.Alias (x1, x2)              -> Alias (x1, x2)
+    | P.Event (x1, x2, x3)          -> Event (x1, x2, x3)
+    | P.Event_struct (x1, x2)       -> Event_struct (x1, x2)
+    | P.Generic_event (x1, x2, x3)  -> Generic_event (x1, x2, x3)
+    | P.Error (x1, x2, x3)          -> Error (x1, x2, x3)
+    | P.Struct (x1, x2)             -> Struct (x1, x2)
+    | P.Union (x1, x2)              -> Union (x1, x2)
+    | P.Request (x1, x2, x3)        -> Request (x1, x2, x3)
+
+
+  type extension_p7 =
+    { name         : string
+    ; file_name    : string
+    ; query_name   : string option
+    ; version      : (int * int) option
+    ; imports      : string list
+    ; declarations : declaration_p7 list }
+
+
+  let resolve_events_errors (exts : P.extension_p6 StrMap.t) : extension_p7 StrMap.t =
+    StrMap.fold exts ~init:StrMap.empty ~f:(fun ~key:ext_id ~data:ext acc ->
+      let decls = List.map (resolve exts ext) ext.declarations in
+      let ext =
+        { name = ext.name; file_name = ext.file_name
+        ; query_name = ext.query_name; version = ext.version
+        ; imports = ext.imports
+        ; declarations = decls } in
+      StrMap.add acc ~key:ext_id ~data:ext
+    )
+end
+
+
+module Pass_8 = struct
+end
+
+
 let%test_unit _ =
   let files =
     [ "bigreq"; "composite"; "damage"; "dpms"; "dri2"; "dri3"; "ge"; "glx"
@@ -478,6 +683,8 @@ let%test_unit _ =
   let exts = ListLabels.fold_left exts ~init:StrMap.empty
     ~f:(fun acc ext -> StrMap.add acc ~key:ext.Pass_4.file_name ~data:ext) in
   let exts = Pass_5.resolve_aliases exts in
+  let exts = Pass_6.resolve_event_structs exts in
+  let exts = Pass_7.resolve_events_errors exts in
   ()
 
 

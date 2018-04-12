@@ -214,6 +214,9 @@ type generic_event =
 type allowed_events =
   { extension    : string
   (** The extension the events are defined in. *)
+  (* Once again XInput breaks all conventions by referring to an
+   * extension not by its "header" field ("file_name" here),
+   * but by its "extension-name". *)
   ; opcode_range : int * int
   (** Only events that have opcodes within this range are allowed. *)
   }

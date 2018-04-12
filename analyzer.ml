@@ -468,9 +468,9 @@ module Pass_6 = struct
   (* In which we resolve event structs. *)
   module P = Pass_5
 
-  type prim = P.prim
+  type prim = Pass_4.prim
 
-  type x_type = P.x_type
+  type x_type = Pass_5.x_type
 
   type declaration_p6 =
     | Prim of string * prim
@@ -561,9 +561,9 @@ module Pass_7 = struct
 
   type ref_t = Pass_5.ref_t
 
-  type prim = P.prim
+  type prim = Pass_4.prim
 
-  type x_type = P.x_type
+  type x_type = Pass_5.x_type
 
   type declaration_p7 =
     | Prim of string * prim
@@ -666,6 +666,101 @@ end
 
 
 module Pass_8 = struct
+  (* In which we resolve Card32 unions. *)
+  module P = Pass_7
+
+  type ref_t = Pass_5.ref_t
+
+  type prim = Pass_4.prim
+
+  type x_type = Pass_5.x_type
+
+  type declaration_p8 =
+    | Prim of string * prim
+    | Enum of string * X.enum_items
+    | Mask of string * X.mask
+    | Card32_union of string * ref_t list
+    | Struct of string * X.struct_fields
+    | Union of string * X.static_field list
+    | Event_struct of string * ref_t list
+
+    | Alias of string * x_type
+    | Event_alias of string * int * ref_t
+    | Generic_event_alias of string * int * ref_t
+    | Error_alias of string * int * ref_t
+
+    | Event of string * int * X.event
+    | Generic_event of string * int * X.generic_event
+    | Error of string * int * X.error
+    | Request of string * int * X.request
+
+
+  let find_xid name = function
+    | P.Prim (n, Pass_4.Uint32) | P.Alias (n, `Prim _) when n = name -> true
+    | _ -> false
+
+
+  let resolve_card32_union (exts : P.extension_p7 StrMap.t) (ext : P.extension_p7) name =
+    match string_split ':' name with
+    | Some (ext_id, name) ->
+      Pass_5.Ext (ext_id, name)
+    | None ->
+      if List.exists (find_xid name) ext.declarations
+      then Pass_5.Ref name else
+        ext.imports |> list_get_exn (fun ext_id ->
+          let ext = StrMap.find ext_id exts in
+          if List.exists (find_xid name) ext.declarations then
+            Some (Pass_5.Ext (ext_id, name))
+          else
+            None
+        )
+
+
+  let resolve exts curr_ext = function
+    | P.Card32_union (name, ids) ->
+      let ids = List.map (resolve_card32_union exts curr_ext) ids in
+      Card32_union (name, ids)
+
+    | P.Prim (x1, x2)                    -> Prim (x1, x2)
+    | P.Enum (x1, x2)                    -> Enum (x1, x2)
+    | P.Mask (x1, x2)                    -> Mask (x1, x2)
+    | P.Alias (x1, x2)                   -> Alias (x1, x2)
+    | P.Event_alias (x1, x2, x3)         -> Event_alias (x1, x2, x3)
+    | P.Generic_event_alias (x1, x2, x3) -> Generic_event_alias (x1, x2, x3)
+    | P.Error_alias (x1, x2, x3)         -> Error_alias (x1, x2, x3)
+    | P.Event (x1, x2, x3)               -> Event (x1, x2, x3)
+    | P.Event_struct (x1, x2)            -> Event_struct (x1, x2)
+    | P.Generic_event (x1, x2, x3)       -> Generic_event (x1, x2, x3)
+    | P.Error (x1, x2, x3)               -> Error (x1, x2, x3)
+    | P.Struct (x1, x2)                  -> Struct (x1, x2)
+    | P.Union (x1, x2)                   -> Union (x1, x2)
+    | P.Request (x1, x2, x3)             -> Request (x1, x2, x3)
+
+
+  type extension_p8 =
+    { name         : string
+    ; file_name    : string
+    ; query_name   : string option
+    ; version      : (int * int) option
+    ; imports      : string list
+    ; declarations : declaration_p8 list }
+
+
+  let resolve_card32_unions (exts : P.extension_p7 StrMap.t) : extension_p8 StrMap.t =
+    StrMap.fold exts ~init:StrMap.empty ~f:(fun ~key:ext_id ~data:ext acc ->
+      let decls = List.map (resolve exts ext) ext.declarations in
+      let ext =
+        { name = ext.name; file_name = ext.file_name
+        ; query_name = ext.query_name; version = ext.version
+        ; imports = ext.imports
+        ; declarations = decls } in
+      StrMap.add acc ~key:ext_id ~data:ext
+    )
+end
+
+
+module Pass_9 = struct
+  (* In which we resolve  *)
 end
 
 
@@ -685,6 +780,7 @@ let%test_unit _ =
   let exts = Pass_5.resolve_aliases exts in
   let exts = Pass_6.resolve_event_structs exts in
   let exts = Pass_7.resolve_events_errors exts in
+  let exts = Pass_8.resolve_card32_unions exts in
   ()
 
 

@@ -30,7 +30,6 @@
  * we'll have to keep track of all the basic types assigned to a certain enum
  * throughout the codebase and generate multiple conversion functions as
  * needed.
- * Types belonging to this category are enums and masks.
  *
  * Composite types are the structs. Like primitive types, their purpose is to
  * define the wire representation of a record of values. They include
@@ -65,10 +64,6 @@ type padding =
 type required_start_align =
   { align  : int
   ; offset : int option }
-
-
-(* Unsupported right now. *)
-type doc = unit
 
 
 type enum_items = (string * int) list
@@ -253,8 +248,8 @@ type request =
   { combine_adjacent : bool
   (** Whether multiple requests can be combined without affecting the
    * semantics of the request. *)
-  ; params : request_fields * doc option
-  ; reply  : (reply * doc option) option }
+  ; params : request_fields
+  ; reply  : reply option }
 
 
 
@@ -270,19 +265,21 @@ type declaration =
   | X_id_union of string * string list
   (** Declare an union type of XIDs. *)
 
-  | Enum of string * enum * doc option
+  | Enum of string * enum
   (** Declare an enum or a bit mask. *)
 
   | Type_alias of string * string
   (** Alias a type (basic type, XID union or enum/mask) to a new name.
    * (new, old) *)
+  (* One might be led to think that type aliases to another type alias are not
+   * allowed, and you'd be right if it weren't for xkb. *)
 
-  | Event of string * int * event * doc option
+  | Event of string * int * event
   (** Something happened on the X server, and the client was informed.
    * For most events we only need to generate the parsing code, but we need to
    * be able to serialize those defined in event structs. *)
 
-  | Generic_event of string * int * generic_event * doc option
+  | Generic_event of string * int * generic_event
   (** Generic events are events that don't have a fixed size. They have a
    * completely separate namespace from normal ones, so we need to account
    * for collisions. *)

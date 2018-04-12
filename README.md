@@ -4,14 +4,20 @@ Not nearly done.
 
 
 ## Contents
-`parser.ml` attempts to parse the horrors of the X11 XML spec into something
-structured and understandable. `parser.mli` documents the output.
+`Parser` attempts to parse the X11 XML spec into something structured.
+In this stage, all information is preserved and what can be inferred in a
+single pass without considering other declaration will be inferred.
 
-`analyzer.ml` analyzes the output of the parser and tries to turn it into
-something more useful to a less braindead language than C.
+`Analyzer` analyzes `Parser`'s output and infers all information that could be
+useful for generating code. It resolves all bindings to figure out the type of
+each declaration, tracks usage of all types to figure out what conversion
+functions to generate and prune dead code, and in general attempts to output
+a rich AST with all information that could be useful to languages with complex
+type systems.
 
-In the future there will be an OCaml code generator, hopefully functorized so
-that you can plug other languages into it.
+`Generator` takes the output of `Analyzer` and generates the OCaml code. In the
+future I will attempt to partly functorize this so that generators for other
+languages may easily be plugged in.
 
 
 ## Useful links

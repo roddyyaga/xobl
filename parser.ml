@@ -141,8 +141,8 @@ let enum_of_xml items =
   let vals, flags, doc = parse_items ([], []) items in
   let vals, flags = List.rev vals, List.rev flags in
   match flags with
-  | [] -> `Enum vals, doc
-  | _  -> `Mask { vals; flags }, doc
+  | [] -> `Enum vals
+  | _  -> `Mask { vals; flags }
 
 
 
@@ -467,20 +467,19 @@ type reply =
 
 type request =
   { combine_adjacent : bool
-  ; params : request_fields * doc option
-  ; reply : (reply * doc option) option }
+  ; params : request_fields
+  ; reply : reply option }
 
 
-let reply_of_xml fields : reply * doc option =
+let reply_of_xml fields : reply =
   let align, fields  = consume_align fields in
   let doc, fields    = consume_doc fields in
   let switch, fields = consume_switch fields in
   let fields = List.map dynamic_field_of_xml fields in
-  { align; fields; switch }, doc
+  { align; fields; switch }
 
 
-let request_of_xml fields :
-    (request_fields * doc option) * (reply * doc option) option =
+let request_of_xml fields : request_fields * reply option =
   let align, fields  = consume_align fields in
   let doc, fields    = consume_doc fields in
   let switch, fields = consume_switch fields in
@@ -497,7 +496,7 @@ let request_of_xml fields :
       fail_unexpected "invalid element in request"
   in
   let fields, reply = parse_params [] fields in
-  ({ align; fields; switch }, doc), reply
+  { align; fields; switch }, reply
 
 
 
@@ -506,11 +505,11 @@ type declaration =
   | Import of string
   | X_id of string
   | X_id_union of string * string list
-  | Enum of string * enum * doc option
+  | Enum of string * enum
   | Type_alias of string * string
 
-  | Event of string * int * event * doc option
-  | Generic_event of string * int * generic_event * doc option
+  | Event of string * int * event
+  | Generic_event of string * int * generic_event
   | Event_struct of string * allowed_events list
   | Event_alias of string * int * string
 
@@ -539,8 +538,8 @@ let declaration_of_xml : Xml.xml -> declaration =
     X_id_union (id, types)
 
   | "enum", ["name", name], children ->
-    let items, doc = enum_of_xml children in
-    Enum (name, items, doc)
+    let items = enum_of_xml children in
+    Enum (name, items)
 
   | "typedef", ["oldname", old_name; "newname", new_name], []
   | "typedef", ["newname", new_name; "oldname", old_name], [] ->
@@ -555,10 +554,10 @@ let declaration_of_xml : Xml.xml -> declaration =
     let doc, fields = consume_doc fields in
     if is_generic then
       let fields = List.map dynamic_field_of_xml fields in
-      Generic_event (name, code, { no_sequence_number; align; fields }, doc)
+      Generic_event (name, code, { no_sequence_number; align; fields })
     else
       let fields = List.map static_field_of_xml fields in
-      Event (name, code, { no_sequence_number; align; fields }, doc)
+      Event (name, code, { no_sequence_number; align; fields })
 
   | "eventstruct", ["name", name], allowed ->
     let allowed = List.map allowed_events_of_xml allowed in

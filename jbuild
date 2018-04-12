@@ -1,7 +1,7 @@
 (jbuild_version 1)
 
 (library
- ((name parser)
+ ((name analyzer)
   (libraries (xml-light unix))
   (inline_tests
    ((deps ((glob_files xproto/src/*.xml)))))

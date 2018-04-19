@@ -123,16 +123,12 @@ type allowed_vals =
   | `Alt_enum of string
   | `Alt_mask of string ]
 
-(** The type of a field is defined by two things: the concrete type,
- * which could be any basic type or a XID union, and an enum or mask, if
- * present.
- * When [allowed] is empty, the type will be the one in the * [typ] field.
- * When [allowed] contains either Enum or Mask, the field will only accept
- * values from that enum or mask, and the [typ] field will only serve to decide
- * how to serialize and parse the value.
- * When it is Alt_enum or Alt_mask, the field will accept both values from
- * the enum and raw values of the type indicated by [typ]. The enum/mask values
- * will be serialized based on [typ] like above. *)
+(** A field could contain any type, including enumerated which don't have a
+ * default wire representation.
+ * For basic and composite types, the "allowed" field will be empty and the
+ * "typ" field will contain the name of the type, while for enumerated types
+ * the "allowed" field will contain the name of the enum or the mask, while the
+ * "typ" field will be a basic type that determines its wire representation. *)
 type field_type =
   { typ     : string
   ; allowed : allowed_vals option }

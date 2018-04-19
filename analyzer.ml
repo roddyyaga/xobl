@@ -28,6 +28,12 @@ let ( <||> ) x y =
   | None -> Lazy.force y
 
 
+let ( <|!|> ) x y =
+  match x with
+  | Some x -> x
+  | None -> Lazy.force y
+
+
 let rec list_get (test : 'a -> 'b option) : 'a list -> 'b option = function
   | [] ->
     None
@@ -364,7 +370,9 @@ module Pass_5 = struct
     | `Enum of ref_t
     | `Mask of ref_t
     | `Card32_union of ref_t
-    | `Struct of ref_t ]
+    | `Struct of ref_t
+    | `Union of ref_t
+    | `Event_struct of ref_t ]
 
   type declaration =
     | Prim of string * prim
@@ -760,7 +768,216 @@ end
 
 
 module Pass_9 = struct
-  (* In which we resolve  *)
+  (* In which we resolve the types of all struct fields. *)
+  module P = Pass_8
+
+  type ref_t = Pass_5.ref_t
+
+  type prim = Pass_4.prim
+
+  type x_type = Pass_5.x_type
+
+  type basic =
+    [ `Prim of prim
+    | `Prim_ref of ref_t
+    | `Card32_union of ref_t ]
+
+  type complex =
+    [ `Struct of ref_t
+    | `Union of ref_t
+    | `Event_struct of ref_t ]
+
+  type enumeration =
+    [ `Enum of ref_t * basic
+    | `Mask of ref_t * basic
+    | `Alt_enum of ref_t * basic
+    | `Alt_mask of ref_t * basic ]
+
+  type field_type = [ basic | complex | enumeration ]
+
+  type static_field =
+    [ `Pad of X.padding
+    | `Field of string * field_type
+    | `List of string * field_type * X.expression
+    | `File_descriptor of string ]
+
+  type dynamic_field =
+    [ static_field  | `List_var of string * field_type ]
+
+  type request_field =
+    [ dynamic_field | `Expr of string * basic * X.expression ]
+
+  type switch =
+    { align : X.required_start_align option
+    ; cond : X.cond
+    ; cases : case list }
+
+  and case =
+    { exprs : X.expression list
+    ; name  : string option
+    ; align_c : X.required_start_align option
+    ; fields : static_field list
+    ; switch : (string * switch) option }
+
+  type event =
+    { no_sequence_number : bool
+    ; align : X.required_start_align option
+    ; fields : dynamic_field list }
+
+  type generic_event =
+    { no_sequence_number : bool
+    ; align : X.required_start_align option
+    ; fields : dynamic_field list }
+
+  type error =
+    { align  : X.required_start_align option
+    ; fields : static_field list }
+
+  type struct_fields =
+    { fields : static_field list
+    ; switch : (string * switch) option }
+
+  type request_fields =
+    { align  : X.required_start_align option
+    ; fields : request_field list
+    ; switch : (string * switch) option }
+
+  type reply =
+    { align  : X.required_start_align option
+    ; fields : dynamic_field list
+    ; switch : (string * switch) option }
+
+  type request =
+    { combine_adjacent : bool
+    ; params : request_fields
+    ; reply : reply option }
+
+  type declaration_p9 =
+    | Prim of string * prim
+    | Enum of string * X.enum_items
+    | Mask of string * X.mask
+    | Card32_union of string * ref_t list
+    | Struct of string * struct_fields
+    | Union of string * static_field list
+    | Event_struct of string * ref_t list
+
+    | Alias of string * x_type
+    | Event_alias of string * int * ref_t
+    | Generic_event_alias of string * int * ref_t
+    | Error_alias of string * int * ref_t
+
+    | Event of string * int * event
+    | Generic_event of string * int * generic_event
+    | Error of string * int * error
+    | Request of string * int * request
+
+
+  let find_basic ref_t name : P.declaration_p8 -> basic option = function
+    | P.Prim (n, _) | P.Alias (n, `Prim _) when n = name ->
+      Some (`Prim_ref (ref_t n))
+    | P.Card32_union (n, _) | P.Alias (n, `Card32_union _) when n = name ->
+      Some (`Card32_union (ref_t n))
+    | _ -> None
+
+  let find_complex ref_t name : P.declaration_p8 -> complex option = function
+    | P.Struct (n, _) | P.Alias (n, `Struct _) when n = name ->
+      Some (`Struct (ref_t n))
+    | P.Union (n, _) | P.Alias (n, `Union _) when n = name ->
+      Some (`Union (ref_t n))
+    | P.Event_struct (n, _) | P.Alias (n, `Event_struct _) when n = name ->
+      Some (`Event_struct (ref_t n))
+    | _ -> None
+
+  let find_field_type ref_t name x : field_type option =
+    (find_basic ref_t name x :> field_type option) <||> lazy (find_complex ref_t name x :> field_type option)
+
+
+  let resolve_field_type (exts : P.extension_p8 StrMap.t) (curr_ext : P.extension_p8) = function
+    | { X.typ; allowed = Some enumeration } ->
+      begin
+      let typ = match string_split ':' typ with
+        | Some (ext_id, name) when ext_id = curr_ext.file_name ->
+          list_get_exn (find_basic (fun n -> Pass_5.Ref n) name) curr_ext.declarations
+        | Some (ext_id, name) ->
+          let ext = StrMap.find ext_id exts in
+          list_get_exn (find_basic (fun n -> Pass_5.Ext (ext_id, n)) name) ext.declarations
+        | None ->
+          list_get (find_basic (fun n -> Pass_5.Ref n) typ) curr_ext.declarations
+          <|!|> lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
+              let ext = StrMap.find ext_id exts in
+              list_get (find_basic (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
+            ))
+      in
+      let process_enum test name = match string_split ':' name with
+        | Some (ext_id, name) when ext_id = curr_ext.file_name ->
+          Pass_5.Ref name
+        | Some (ext_id, name) ->
+          Pass_5.Ext (ext_id, name)
+        | None ->
+          if List.exists test curr_ext.declarations
+          then Pass_5.Ref name
+          else curr_ext.imports |> list_get_exn (fun ext_id ->
+            let ext = StrMap.find ext_id exts in
+            if List.exists test ext.declarations
+            then Some (Pass_5.Ext (ext_id, name))
+            else None
+          )
+      in
+      match enumeration with
+      | `Enum n ->
+        let e = process_enum (function Enum (name, _) when name = n -> true | _ -> false) n in
+        `Enum (e, typ)
+      | `Alt_enum n ->
+        let e = process_enum (function Enum (name, _) when name = n -> true | _ -> false) n in
+        `Alt_enum (e, typ)
+      | `Mask n ->
+        let e = process_enum (function Mask (name, _) when name = n -> true | _ -> false) n in
+        `Mask (e, typ)
+      | `Alt_mask n ->
+        let e = process_enum (function Mask (name, _) when name = n -> true | _ -> false) n in
+        `Alt_mask (e, typ)
+      end
+
+    | { X.typ; allowed = None } ->
+      match string_split ':' typ with
+      | Some (ext_id, name) when ext_id = curr_ext.file_name ->
+        list_get_exn (find_field_type (fun n -> Pass_5.Ref n) name) curr_ext.declarations
+      | Some (ext_id, name) ->
+        let ext = StrMap.find ext_id exts in
+        list_get_exn (find_field_type (fun n -> Pass_5.Ext (ext_id, n)) name) ext.declarations
+      | None ->
+        list_get (find_field_type (fun n -> Pass_5.Ref n) typ) curr_ext.declarations
+        <|!|> lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
+            let ext = StrMap.find ext_id exts in
+            list_get (find_field_type (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
+          ))
+
+
+
+        (*
+  let resolve exts curr_ext = function
+    | P.Struct (name, 
+
+    | P.Struct (x1, x2)                  -> Struct (x1, x2)
+    | P.Union (x1, x2)                   -> Union (x1, x2)
+
+    | P.Event (x1, x2, x3)               -> Event (x1, x2, x3)
+    | P.Generic_event (x1, x2, x3)       -> Generic_event (x1, x2, x3)
+    | P.Error (x1, x2, x3)               -> Error (x1, x2, x3)
+    | P.Request (x1, x2, x3)             -> Request (x1, x2, x3)
+
+    | P.Prim (x1, x2)                    -> Prim (x1, x2)
+    | P.Card32_union (x1, x2)            -> Card32_union (x1, x2)
+    | P.Enum (x1, x2)                    -> Enum (x1, x2)
+    | P.Mask (x1, x2)                    -> Mask (x1, x2)
+    | P.Event_struct (x1, x2)            -> Event_struct (x1, x2)
+    | P.Alias (x1, x2)                   -> Alias (x1, x2)
+    | P.Event_alias (x1, x2, x3)         -> Event_alias (x1, x2, x3)
+    | P.Generic_event_alias (x1, x2, x3) -> Generic_event_alias (x1, x2, x3)
+    | P.Error_alias (x1, x2, x3)         -> Error_alias (x1, x2, x3)
+*)
+
+
 end
 
 

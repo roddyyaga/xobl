@@ -168,7 +168,7 @@ type cond =
  * the enclosing struct. *)
 type switch =
   { align : required_start_align option
-  ; cond : cond
+  ; cond  : cond
   ; cases : case list }
 
 (** Essentially an if statement which uses an operation that takes the

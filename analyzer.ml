@@ -7,7 +7,7 @@ let string_split chr str =
     if i >= len then
       None
     else if str.[i] = chr then
-      let left = StringLabels.sub str ~pos:0 ~len:(if i = 0 then 0 else i - 1) in
+      let left = StringLabels.sub str ~pos:0 ~len:i in
       let right = StringLabels.sub str ~pos:(i + 1) ~len:(len - i - 1) in
       Some (left, right)
     else
@@ -17,6 +17,10 @@ let string_split chr str =
 let option_get_exn = function
   | Some x -> x
   | None -> raise Not_found
+
+let option_map f = function
+  | Some x -> Some (f x)
+  | None -> None
 
 
 let failwithf fmt = Printf.ksprintf failwith fmt
@@ -268,6 +272,7 @@ module Pass_4 = struct
   module P = Pass_3
 
   type prim =
+    | Void
     | Bool
     | Byte
     | Int8
@@ -276,18 +281,23 @@ module Pass_4 = struct
     | Uint8
     | Uint16
     | Uint32
+    | Uint64
     | Float32
     | Float64
 
   let prim_of_string = function
+    | "void"   -> Some Void
     | "char"   -> Some Byte
     | "BYTE"   -> Some Byte
     | "BOOL"   -> Some Bool
+    | "INT8"   -> Some Int8
     | "INT16"  -> Some Int16
     | "INT32"  -> Some Int32
+    | "fd"     -> Some Int32
     | "CARD8"  -> Some Uint8
     | "CARD16" -> Some Uint16
     | "CARD32" -> Some Uint32
+    | "CARD64" -> Some Uint64
     | "float"  -> Some Float32
     | "double" -> Some Float64
     | _        -> None
@@ -822,7 +832,7 @@ module Pass_9 = struct
   type event =
     { no_sequence_number : bool
     ; align : X.required_start_align option
-    ; fields : dynamic_field list }
+    ; fields : static_field list }
 
   type generic_event =
     { no_sequence_number : bool
@@ -889,13 +899,17 @@ module Pass_9 = struct
     | _ -> None
 
   let find_field_type ref_t name x : field_type option =
-    (find_basic ref_t name x :> field_type option) <||> lazy (find_complex ref_t name x :> field_type option)
+    (find_basic ref_t name x :> field_type option)
+      <||> lazy (find_complex ref_t name x :> field_type option)
 
 
-  let resolve_field_type (exts : P.extension_p8 StrMap.t) (curr_ext : P.extension_p8) = function
+  let resolve_basic (exts : P.extension_p8 StrMap.t) (curr_ext : P.extension_p8) : X.field_type -> basic = function
     | { X.typ; allowed = Some enumeration } ->
-      begin
-      let typ = match string_split ':' typ with
+      failwith "invalid basic type"
+
+    | { X.typ; allowed = None } ->
+      option_map (fun t -> `Prim t) (Pass_4.prim_of_string typ) <|!|> lazy begin
+        match string_split ':' typ with
         | Some (ext_id, name) when ext_id = curr_ext.file_name ->
           list_get_exn (find_basic (fun n -> Pass_5.Ref n) name) curr_ext.declarations
         | Some (ext_id, name) ->
@@ -907,6 +921,28 @@ module Pass_9 = struct
               let ext = StrMap.find ext_id exts in
               list_get (find_basic (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
             ))
+      end
+
+
+
+  let resolve_field_type (exts : P.extension_p8 StrMap.t) (curr_ext : P.extension_p8) = function
+    | { X.typ; allowed = Some enumeration } ->
+      begin
+      let typ =
+        option_map (fun t -> `Prim t) (Pass_4.prim_of_string typ) <|!|> lazy begin
+          match string_split ':' typ with
+          | Some (ext_id, name) when ext_id = curr_ext.file_name ->
+            list_get_exn (find_basic (fun n -> Pass_5.Ref n) name) curr_ext.declarations
+          | Some (ext_id, name) ->
+            let ext = StrMap.find ext_id exts in
+            list_get_exn (find_basic (fun n -> Pass_5.Ext (ext_id, n)) name) ext.declarations
+          | None ->
+            list_get (find_basic (fun n -> Pass_5.Ref n) typ) curr_ext.declarations
+            <|!|> lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
+                let ext = StrMap.find ext_id exts in
+                list_get (find_basic (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
+              ))
+        end
       in
       let process_enum test name = match string_split ':' name with
         | Some (ext_id, name) when ext_id = curr_ext.file_name ->
@@ -928,8 +964,19 @@ module Pass_9 = struct
         let e = process_enum (function Enum (name, _) when name = n -> true | _ -> false) n in
         `Enum (e, typ)
       | `Alt_enum n ->
+          (* ***********************************************************************
+           * FIXME FIXME FIXME FIXME FIXME
+           * So apparently we can't know ahead of time whether an enum is an enum or
+           * a mask, because FUCKING XINPUT decided to use the bit index syntax to
+           * represent a number, probably because they were too lazy to look up
+           * how to write 1 << 31. These declarations are what ultimately decides
+           * what is an enum and what is a mask, unless the spec decides to fuck me
+           * over again.
+           * *********************************************************************** *)
+          begin try
         let e = process_enum (function Enum (name, _) when name = n -> true | _ -> false) n in
         `Alt_enum (e, typ)
+          with Not_found -> failwithf "cound't find %s" n end
       | `Mask n ->
         let e = process_enum (function Mask (name, _) when name = n -> true | _ -> false) n in
         `Mask (e, typ)
@@ -939,32 +986,96 @@ module Pass_9 = struct
       end
 
     | { X.typ; allowed = None } ->
-      match string_split ':' typ with
-      | Some (ext_id, name) when ext_id = curr_ext.file_name ->
-        list_get_exn (find_field_type (fun n -> Pass_5.Ref n) name) curr_ext.declarations
-      | Some (ext_id, name) ->
-        let ext = StrMap.find ext_id exts in
-        list_get_exn (find_field_type (fun n -> Pass_5.Ext (ext_id, n)) name) ext.declarations
-      | None ->
-        list_get (find_field_type (fun n -> Pass_5.Ref n) typ) curr_ext.declarations
-        <|!|> lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
-            let ext = StrMap.find ext_id exts in
-            list_get (find_field_type (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
-          ))
+      begin try
+      option_map (fun t -> `Prim t) (Pass_4.prim_of_string typ) <|!|> lazy begin
+        match string_split ':' typ with
+        | Some (ext_id, name) when ext_id = curr_ext.file_name ->
+          list_get_exn (find_field_type (fun n -> Pass_5.Ref n) name) curr_ext.declarations
+        | Some (ext_id, name) ->
+          let ext = StrMap.find ext_id exts in
+          list_get_exn (find_field_type (fun n -> Pass_5.Ext (ext_id, n)) name) ext.declarations
+        | None ->
+          list_get (find_field_type (fun n -> Pass_5.Ref n) typ) curr_ext.declarations
+          <|!|> lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
+              let ext = StrMap.find ext_id exts in
+              list_get (find_field_type (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
+            ))
+      end
+      with Not_found -> failwithf "couldn't find type %s" typ end
 
 
+  let mk_static_field exts curr_ext : X.static_field -> static_field = function
+    | `Field (name, typ) ->
+      let typ = resolve_field_type exts curr_ext typ in
+      `Field (name, typ)
 
-        (*
+    | `List (name, typ, expr) ->
+      let typ = resolve_field_type exts curr_ext typ in
+      `List (name, typ, expr)
+
+    | `File_descriptor name -> `File_descriptor name
+    | `Pad pad              -> `Pad pad
+
+
+  let mk_dynamic_field exts curr_ext : X.dynamic_field -> dynamic_field = function
+    | `List_var (name, typ) ->
+      let typ = resolve_field_type exts curr_ext typ in
+      `List_var (name, typ)
+    | #X.static_field as f ->
+      (mk_static_field exts curr_ext f :> dynamic_field)
+
+
+  let mk_request_field exts curr_ext : X.request_field -> request_field = function
+    | `Expr (name, basic, expr) ->
+      let typ = resolve_basic exts curr_ext basic in
+      `Expr (name, typ, expr)
+    | #X.dynamic_field as f ->
+      (mk_dynamic_field exts curr_ext f :> request_field)
+
+
+  let rec mk_switch exts curr_ext { X.align; cond; cases } : switch =
+    let cases = List.map (mk_case exts curr_ext) cases in
+    { align; cond; cases }
+
+  and mk_case exts curr_ext { X.exprs; name; align_c; fields; switch } : case =
+    let fields = List.map (mk_static_field exts curr_ext) fields in
+    let switch = option_map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
+    { exprs; name; align_c; fields; switch }
+
+
   let resolve exts curr_ext = function
-    | P.Struct (name, 
+    | P.Struct (name, { fields; switch }) ->
+      let fields = List.map (mk_static_field exts curr_ext) fields in
+      let switch = option_map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
+      Struct (name, { fields; switch })
 
-    | P.Struct (x1, x2)                  -> Struct (x1, x2)
-    | P.Union (x1, x2)                   -> Union (x1, x2)
+    | P.Union (name, fields) ->
+      let fields = List.map (mk_static_field exts curr_ext) fields in
+      Union (name, fields)
 
-    | P.Event (x1, x2, x3)               -> Event (x1, x2, x3)
-    | P.Generic_event (x1, x2, x3)       -> Generic_event (x1, x2, x3)
-    | P.Error (x1, x2, x3)               -> Error (x1, x2, x3)
-    | P.Request (x1, x2, x3)             -> Request (x1, x2, x3)
+    | P.Event (name, code, { no_sequence_number; align; fields }) ->
+      let fields = List.map (mk_static_field exts curr_ext) fields in
+      Event (name, code, { no_sequence_number; align; fields })
+
+    | P.Generic_event (name, code, { no_sequence_number; align; fields }) ->
+      let fields = List.map (mk_dynamic_field exts curr_ext) fields in
+      Generic_event (name, code, { no_sequence_number; align; fields })
+
+    | P.Error (name, code, { X.align; fields }) ->
+      let fields = List.map (mk_static_field exts curr_ext) fields in
+      Error (name, code, { align; fields })
+
+    | P.Request (name, code, { X.combine_adjacent
+        ; params = { align = req_align; fields = req_fields; switch = req_switch }; reply }) ->
+      let req_fields = List.map (mk_request_field exts curr_ext) req_fields in
+      let req_switch = option_map (fun (name, switch) -> name, mk_switch exts curr_ext switch) req_switch in
+      let params : request_fields = { align = req_align; fields = req_fields; switch = req_switch } in
+      let reply = reply |> option_map (fun { X.align; fields; switch } ->
+        let fields = List.map (mk_dynamic_field exts curr_ext) fields in
+        let switch = option_map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
+        { align; fields; switch }
+      ) in
+      Request (name, code, { combine_adjacent; reply; params })
 
     | P.Prim (x1, x2)                    -> Prim (x1, x2)
     | P.Card32_union (x1, x2)            -> Card32_union (x1, x2)
@@ -975,9 +1086,27 @@ module Pass_9 = struct
     | P.Event_alias (x1, x2, x3)         -> Event_alias (x1, x2, x3)
     | P.Generic_event_alias (x1, x2, x3) -> Generic_event_alias (x1, x2, x3)
     | P.Error_alias (x1, x2, x3)         -> Error_alias (x1, x2, x3)
-*)
 
 
+  type extension_p9 =
+    { name         : string
+    ; file_name    : string
+    ; query_name   : string option
+    ; version      : (int * int) option
+    ; imports      : string list
+    ; declarations : declaration_p9 list }
+
+
+  let resolve_field_types (exts : P.extension_p8 StrMap.t) : extension_p9 StrMap.t =
+    StrMap.fold exts ~init:StrMap.empty ~f:(fun ~key:ext_id ~data:ext acc ->
+      let decls = List.map (resolve exts ext) ext.declarations in
+      let ext =
+        { name = ext.name; file_name = ext.file_name
+        ; query_name = ext.query_name; version = ext.version
+        ; imports = ext.imports
+        ; declarations = decls } in
+      StrMap.add acc ~key:ext_id ~data:ext
+    )
 end
 
 
@@ -998,18 +1127,5 @@ let%test_unit _ =
   let exts = Pass_6.resolve_event_structs exts in
   let exts = Pass_7.resolve_events_errors exts in
   let exts = Pass_8.resolve_card32_unions exts in
+  let exts = Pass_9.resolve_field_types exts in
   ()
-
-
-(*
-let%test_unit "pass 1" =
-  let files =
-    [ "bigreq"; "composite"; "damage"; "dpms"; "dri2"; "dri3"; "ge"; "glx"
-    ; "present"; "randr"; "record"; "render"; "res"; "screensaver"; "shape"
-    ; "shm"; "sync"; "xc_misc"; "xevie"; "xf86dri"; "xf86vidmode"; "xfixes"
-    ; "xinerama"; "xinput"; "xkb"; "xprint"; "xproto"; "xselinux"; "xtest"
-    ; "xvmc"; "xv" ]
-  in
-  let _ = Pass_1.load_extensions files in
-  ()
-  *)

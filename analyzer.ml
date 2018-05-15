@@ -14,28 +14,8 @@ let string_split chr str =
       pos (i + 1)
   in pos 0
 
-let option_get_exn = function
-  | Some x -> x
-  | None -> raise Not_found
-
-let option_map f = function
-  | Some x -> Some (f x)
-  | None -> None
-
 
 let failwithf fmt = Printf.ksprintf failwith fmt
-
-
-let ( <||> ) x y =
-  match x with
-  | Some _ -> x
-  | None -> Lazy.force y
-
-
-let ( <|!|> ) x y =
-  match x with
-  | Some x -> x
-  | None -> Lazy.force y
 
 
 let rec list_get (test : 'a -> 'b option) : 'a list -> 'b option = function
@@ -59,81 +39,185 @@ let resolve_extension_path name =
   Filename.concat "xproto/src" (name ^ ".xml")
 
 
-module StrMap = MoreLabels.Map.Make(String)
+module String_map = MoreLabels.Map.Make(String)
 
 
+let load_extension file_name : X.protocol_file =
+  resolve_extension_path file_name
+  |> X.parse_file
+
+
+(** In which we load every extension and abstract imports into the extension
+   information. *)
 module Pass_1 = struct
-  (* In which we load every extension and abstract imports into the extension
-   * information. *)
+  type declaration_p1 =
+    [ `X_id of string
+    | `X_id_union of string * string list
+    | `Enum of string * X.enum
+    | `Type_alias of string * string
 
-  type declaration =
-    | X_id of string
-    | X_id_union of string * string list
-    | Enum of string * X.enum
-    | Type_alias of string * string
+    | `Event of string * int * X.event
+    | `Generic_event of string * int * X.generic_event
+    | `Event_struct of string * X.allowed_events list
+    | `Event_alias of string * int * string
 
-    | Event of string * int * X.event
-    | Generic_event of string * int * X.generic_event
-    | Event_struct of string * X.allowed_events list
-    | Event_alias of string * int * string
+    | `Error of string * int * X.error
+    | `Error_alias of string * int * string
 
-    | Error of string * int * X.error
-    | Error_alias of string * int * string
-
-    | Struct of string * X.struct_fields
-    | Union of string * X.static_field list
-    | Request of string * int * X.request
+    | `Struct of string * X.struct_fields
+    | `Union of string * X.static_field list
+    | `Request of string * int * X.request ]
 
 
-  let lift_imports decls : string list * declaration list =
+  let sep_imports (decls : X.declaration list) : string list * declaration_p1 list =
     let imports, decls =
       ListLabels.fold_left decls ~init:([], []) ~f:(fun (imports, decls) ->
         function
-        | X.Import id ->
+        | `Import id ->
           (id :: imports), decls
 
-        | X.X_id x                      -> imports, X_id x                     :: decls
-        | X.X_id_union (x1, x2)         -> imports, X_id_union (x1, x2)        :: decls
-        | X.Enum (x1, x2)               -> imports, Enum (x1, x2)              :: decls
-        | X.Type_alias (x1, x2)         -> imports, Type_alias (x1, x2)        :: decls
-        | X.Event (x1, x2, x3)          -> imports, Event (x1, x2, x3)         :: decls
-        | X.Generic_event (x1, x2, x3)  -> imports, Generic_event (x1, x2, x3) :: decls
-        | X.Event_struct (x1, x2)       -> imports, Event_struct (x1, x2)      :: decls
-        | X.Event_alias (x1, x2, x3)    -> imports, Event_alias (x1, x2, x3)   :: decls
-        | X.Error (x1, x2, x3)          -> imports, Error (x1, x2, x3)         :: decls
-        | X.Error_alias (x1, x2, x3)    -> imports, Error_alias (x1, x2, x3)   :: decls
-        | X.Struct (x1, x2)             -> imports, Struct (x1, x2)            :: decls
-        | X.Union (x1, x2)              -> imports, Union (x1, x2)             :: decls
-        | X.Request (x1, x2, x3)        -> imports, Request (x1, x2, x3)       :: decls
+        | #declaration_p1 as d ->
+          imports, (d :: decls)
       )
     in
     List.rev imports, List.rev decls
 
-
-  type extension =
+  type extension_p1 =
     { name         : string
     ; file_name    : string
     ; query_name   : string option
     ; version      : (int * int) option
     ; imports      : string list
-    ; declarations : declaration list }
+    ; declarations : declaration_p1 list }
 
 
-  let load_extension file_name : extension =
-    match X.parse_file (resolve_extension_path file_name) with
+  let lift_imports : X.protocol_file -> extension_p1 = function
     | Core decls ->
-      let imports, declarations = lift_imports decls in
-      { name = "Xproto"
+      let imports, declarations = sep_imports decls in
+      { name = "Xproto"; file_name = "xproto"
       ; query_name = None; version = None
-      ; file_name; imports; declarations }
+      ; imports; declarations }
 
-    | Extension ({ name; query_name; version; _ }, decls) ->
-      let imports, declarations = lift_imports decls in
+    | Extension ({ name; query_name; version; file_name; _ }, decls) ->
+      let imports, declarations = sep_imports decls in
       { query_name = Some query_name; version = Some version
       ; name; file_name; imports; declarations }
 end
 
 
+
+(** In which we get rid of XIDs. *)
+module Pass_2 = struct
+  module P = Pass_1
+
+  type declaration_p2 =
+    [ `Enum of string * X.enum
+    | `Type_alias of string * string
+    | `X_id_union of string * string list
+
+    | `Event of string * int * X.event
+    | `Generic_event of string * int * X.generic_event
+    | `Event_struct of string * X.allowed_events list
+    | `Event_alias of string * int * string
+
+    | `Error of string * int * X.error
+    | `Error_alias of string * int * string
+
+    | `Struct of string * X.struct_fields
+    | `Union of string * X.static_field list
+    | `Request of string * int * X.request ]
+
+
+  let delete_xids : P.declaration_p1 -> declaration_p2 = function
+    | `X_id id ->
+      `Type_alias (id, "CARD32")
+
+    | #declaration_p2 as d ->
+      d
+end
+
+
+
+(** Primitive types. *)
+module Prim = struct
+  type t =
+    | Void | Bool | Byte
+    | Int8  | Int16  | Int32
+    | Uint8 | Uint16 | Uint32 | Uint64
+    | Float32 | Float64
+
+  let of_string = function
+    | "void"   -> Some Void
+    | "char"   -> Some Byte
+    | "BYTE"   -> Some Byte
+    | "BOOL"   -> Some Bool
+    | "INT8"   -> Some Int8
+    | "INT16"  -> Some Int16
+    | "INT32"  -> Some Int32
+    | "fd"     -> Some Int32
+    | "CARD8"  -> Some Uint8
+    | "CARD16" -> Some Uint16
+    | "CARD32" -> Some Uint32
+    | "CARD64" -> Some Uint64
+    | "float"  -> Some Float32
+    | "double" -> Some Float64
+    | _        -> None
+end
+
+
+
+(** In which we resolve the type aliases to primitive types. *)
+module Pass_3 = struct
+  module P = Pass_2
+
+  type declaration_p3 =
+    [ `Prim of string * Prim.t
+    | `Enum of string * X.enum
+    | `X_id_union of string * string list
+
+    | `Type_alias of string * string
+
+    | `Event of string * int * X.event
+    | `Generic_event of string * int * X.generic_event
+    | `Event_struct of string * X.allowed_events list
+    | `Event_alias of string * int * string
+
+    | `Error of string * int * X.error
+    | `Error_alias of string * int * string
+
+    | `Struct of string * X.struct_fields
+    | `Union of string * X.static_field list
+    | `Request of string * int * X.request ]
+
+
+  let resolve_prims : P.declaration_p2 -> declaration_p3 = function
+    | `Type_alias (name, id) as d ->
+      (match Prim.of_string id with
+      | Some p -> `Prim (name, p)
+      | None   -> d)
+
+    | #P.declaration_p2 as d -> d
+end
+
+
+
+let%test_unit _ =
+  let files =
+    [ "bigreq"; "composite"; "damage"; "dpms"; "dri2"; "dri3"; "ge"; "glx"
+    ; "present"; "randr"; "record"; "render"; "res"; "screensaver"; "shape"
+    ; "shm"; "sync"; "xc_misc"; "xevie"; "xf86dri"; "xf86vidmode"; "xfixes"
+    ; "xinerama"; "xinput"; "xkb"; "xprint"; "xproto"; "xselinux"; "xtest"
+    ; "xvmc"; "xv" ] in
+  let exts = List.map load_extension files in
+  let exts = List.map Pass_1.lift_imports exts in
+  let _exts = ListLabels.map exts ~f:(fun ext ->
+    let decls = List.map Pass_2.delete_xids ext.Pass_1.declarations in
+    let _decls = List.map Pass_3.resolve_prims decls in
+    ()
+  ) in
+  ()
+
+(*
 module Pass_2 = struct
   (* In which we separate Enum declarations into enums and masks.  *)
   module P = Pass_1
@@ -522,7 +606,7 @@ module Pass_6 = struct
         (* For some reason event struct refers to an extension by its name
          * rather than its filename, so we have no choice but to find the
          * module like this. *)
-        let ext_id, ext = option_get_exn @@ StrMap.fold exts ~init:None
+        let ext_id, ext = Option.get @@ StrMap.fold exts ~init:None
           ~f:(fun ~key:id ~data:ext -> function
             | Some x -> Some x
             | None -> if ext.P.name = extension then Some (id, ext) else None
@@ -900,7 +984,7 @@ module Pass_9 = struct
 
   let find_field_type ref_t name x : field_type option =
     (find_basic ref_t name x :> field_type option)
-      <||> lazy (find_complex ref_t name x :> field_type option)
+    |> Option.or_lazy (lazy (find_complex ref_t name x :> field_type option))
 
 
   let resolve_basic (exts : P.extension_p8 StrMap.t) (curr_ext : P.extension_p8) : X.field_type -> basic = function
@@ -908,7 +992,9 @@ module Pass_9 = struct
       failwith "invalid basic type"
 
     | { X.typ; allowed = None } ->
-      option_map (fun t -> `Prim t) (Pass_4.prim_of_string typ) <|!|> lazy begin
+      Pass_4.prim_of_string typ
+      |> Option.map (fun t -> `Prim t)
+      |> Option.with_default_lazy (lazy begin
         match string_split ':' typ with
         | Some (ext_id, name) when ext_id = curr_ext.file_name ->
           list_get_exn (find_basic (fun n -> Pass_5.Ref n) name) curr_ext.declarations
@@ -917,11 +1003,11 @@ module Pass_9 = struct
           list_get_exn (find_basic (fun n -> Pass_5.Ext (ext_id, n)) name) ext.declarations
         | None ->
           list_get (find_basic (fun n -> Pass_5.Ref n) typ) curr_ext.declarations
-          <|!|> lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
+          |> Option.with_default_lazy (lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
               let ext = StrMap.find ext_id exts in
               list_get (find_basic (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
-            ))
-      end
+            )))
+      end)
 
 
 
@@ -929,7 +1015,9 @@ module Pass_9 = struct
     | { X.typ; allowed = Some enumeration } ->
       begin
       let typ =
-        option_map (fun t -> `Prim t) (Pass_4.prim_of_string typ) <|!|> lazy begin
+      Pass_4.prim_of_string typ
+      |> Option.map (fun t -> `Prim t)
+      |> Option.with_default_lazy (lazy begin
           match string_split ':' typ with
           | Some (ext_id, name) when ext_id = curr_ext.file_name ->
             list_get_exn (find_basic (fun n -> Pass_5.Ref n) name) curr_ext.declarations
@@ -938,11 +1026,11 @@ module Pass_9 = struct
             list_get_exn (find_basic (fun n -> Pass_5.Ext (ext_id, n)) name) ext.declarations
           | None ->
             list_get (find_basic (fun n -> Pass_5.Ref n) typ) curr_ext.declarations
-            <|!|> lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
+            |> Option.with_default_lazy (lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
                 let ext = StrMap.find ext_id exts in
                 list_get (find_basic (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
-              ))
-        end
+              )))
+        end)
       in
       let process_enum test name = match string_split ':' name with
         | Some (ext_id, name) when ext_id = curr_ext.file_name ->
@@ -987,7 +1075,9 @@ module Pass_9 = struct
 
     | { X.typ; allowed = None } ->
       begin try
-      option_map (fun t -> `Prim t) (Pass_4.prim_of_string typ) <|!|> lazy begin
+      Pass_4.prim_of_string typ
+      |> Option.map (fun t -> `Prim t)
+      |> Option.with_default_lazy (lazy begin
         match string_split ':' typ with
         | Some (ext_id, name) when ext_id = curr_ext.file_name ->
           list_get_exn (find_field_type (fun n -> Pass_5.Ref n) name) curr_ext.declarations
@@ -996,11 +1086,11 @@ module Pass_9 = struct
           list_get_exn (find_field_type (fun n -> Pass_5.Ext (ext_id, n)) name) ext.declarations
         | None ->
           list_get (find_field_type (fun n -> Pass_5.Ref n) typ) curr_ext.declarations
-          <|!|> lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
+          |> Option.with_default_lazy (lazy (curr_ext.imports |> list_get_exn (fun ext_id ->
               let ext = StrMap.find ext_id exts in
               list_get (find_field_type (fun n -> Pass_5.Ext (ext_id, n)) typ) ext.declarations
-            ))
-      end
+            )))
+      end)
       with Not_found -> failwithf "couldn't find type %s" typ end
 
 
@@ -1039,14 +1129,14 @@ module Pass_9 = struct
 
   and mk_case exts curr_ext { X.exprs; name; align_c; fields; switch } : case =
     let fields = List.map (mk_static_field exts curr_ext) fields in
-    let switch = option_map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
+    let switch = Option.map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
     { exprs; name; align_c; fields; switch }
 
 
   let resolve exts curr_ext = function
     | P.Struct (name, { fields; switch }) ->
       let fields = List.map (mk_static_field exts curr_ext) fields in
-      let switch = option_map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
+      let switch = Option.map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
       Struct (name, { fields; switch })
 
     | P.Union (name, fields) ->
@@ -1068,11 +1158,11 @@ module Pass_9 = struct
     | P.Request (name, code, { X.combine_adjacent
         ; params = { align = req_align; fields = req_fields; switch = req_switch }; reply }) ->
       let req_fields = List.map (mk_request_field exts curr_ext) req_fields in
-      let req_switch = option_map (fun (name, switch) -> name, mk_switch exts curr_ext switch) req_switch in
+      let req_switch = Option.map (fun (name, switch) -> name, mk_switch exts curr_ext switch) req_switch in
       let params : request_fields = { align = req_align; fields = req_fields; switch = req_switch } in
-      let reply = reply |> option_map (fun { X.align; fields; switch } ->
+      let reply = reply |> Option.map (fun { X.align; fields; switch } ->
         let fields = List.map (mk_dynamic_field exts curr_ext) fields in
-        let switch = option_map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
+        let switch = Option.map (fun (name, switch) -> name, mk_switch exts curr_ext switch) switch in
         { align; fields; switch }
       ) in
       Request (name, code, { combine_adjacent; reply; params })
@@ -1129,3 +1219,4 @@ let%test_unit _ =
   let exts = Pass_8.resolve_card32_unions exts in
   let exts = Pass_9.resolve_field_types exts in
   ()
+  *)

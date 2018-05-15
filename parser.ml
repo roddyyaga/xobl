@@ -1,9 +1,3 @@
-let option_app f = function
-  | Some a -> Some (f a) | None -> None
-
-let option_app_def f x = function
-  | Some a -> f a | None -> x
-
 let rec list_extract f = function
   | [] -> None, []
   | x :: rest ->
@@ -17,6 +11,7 @@ let rec list_extract f = function
 
 
 (* The "_o" suffix represents an attribute that may not be present  *)
+
 let str_attr attrs x =
   List.assoc x attrs
 
@@ -28,17 +23,17 @@ let int_attr attrs x =
 
 let int_attr_o attrs x =
   str_attr_o attrs x
-  |> option_app int_of_string
+  |> Option.map int_of_string
 
 (* Attributes that are false by default *)
 let bool_attr_f attrs x =
   str_attr_o attrs x
-  |> option_app_def bool_of_string false
+  |> Option.map bool_of_string |> Option.with_default false
 
 (* Attributes that are true by default *)
 let bool_attr_t attrs x =
   str_attr_o attrs x
-  |> option_app_def bool_of_string true
+  |> Option.map bool_of_string |> Option.with_default true
 
 
 type xml_el = string * (string * string) list * Xml.xml list
@@ -48,6 +43,9 @@ exception Unexpected of string
 
 let fail_unexpected str =
   raise (Unexpected str)
+
+let fail_unexpectedf fmt =
+  Printf.ksprintf fail_unexpected fmt
 
 
 (* ********** Padding and alignment ********** *)
@@ -110,39 +108,32 @@ let xid_union_of_xml = function
 type enum_items = (string * int) list
 
 
-type mask =
-  { vals  : enum_items
-  ; flags : enum_items }
-
-
 type enum =
-  [ `Mask of mask
-  | `Enum of enum_items ]
+  { vals : enum_items
+  ; bits : enum_items }
 
 
 let enum_of_xml items =
   let open Xml in
-  let rec parse_items (vals, flags) = function
+  let rec parse_items (vals, bits) = function
     | [] ->
-      vals, flags, None
+      vals, bits, None
     | Element ("item", ["name", name], [Element ("value", [], [PCData v])]) :: rest ->
       let vals = (name, int_of_string v) :: vals in
-      parse_items (vals, flags) rest
+      parse_items (vals, bits) rest
     | Element ("item", ["name", name], [Element ("bit",   [], [PCData v])]) :: rest ->
-      let flags = (name, int_of_string v) :: flags in
-      parse_items (vals, flags) rest
+      let bits = (name, int_of_string v) :: bits in
+      parse_items (vals, bits) rest
     | Element ("doc", [], doc) :: [] ->
-      vals, flags, Some ()
+      vals, bits, Some ()
     | Element ("doc", _, _) :: _ ->
       fail_unexpected "invalid enum: doc item not in tail position"
     | _ ->
       fail_unexpected "invalid enum element"
   in
-  let vals, flags, doc = parse_items ([], []) items in
-  let vals, flags = List.rev vals, List.rev flags in
-  match flags with
-  | [] -> `Enum vals
-  | _  -> `Mask { vals; flags }
+  let vals, bits, doc = parse_items ([], []) items in
+  let vals, bits = List.rev vals, List.rev bits in
+  { vals; bits }
 
 
 
@@ -158,7 +149,7 @@ let binop : string -> binop = function
   | "/" -> `Div
   | "&amp;" -> `Bit_and
   | "&lt;&lt;" -> `Bit_left_shift
-  | o -> fail_unexpected ("invalid binary operation: " ^ o)
+  | o -> fail_unexpectedf "invalid binary operation: %s" o
 
 
 type unop =
@@ -166,7 +157,7 @@ type unop =
 
 let unop : string -> unop = function
   | "~" -> `Bit_not
-  | o -> fail_unexpected ("invalid unary operation: " ^ o)
+  | o -> fail_unexpectedf "invalid unary operation: %s" o
 
 
 type expression =
@@ -218,7 +209,7 @@ let rec expression_of_xml : xml_el -> expression =
     `Bit (int_of_string v)
 
   | n, _, _ ->
-    fail_unexpected ("invalid expression: " ^ n)
+    fail_unexpectedf "invalid expression: %s" n
 
 
 
@@ -273,7 +264,7 @@ let static_field_of_xml_el : xml_el -> static_field = function
     `List (name, typ, expression_of_xml expr)
 
   | x, _, _ ->
-    fail_unexpected ("invalid static field: " ^ x)
+    fail_unexpectedf "invalid static field: %s" x
 
 
 let static_field_of_xml = function
@@ -340,7 +331,7 @@ and case =
 let rec switch_of_xml fields =
   let parse_case name = function
     | Xml.Element (n, attrs, fields) when n = name -> case_of_xml attrs fields
-    | _ -> fail_unexpected ("invalid switch: expected " ^ name ^ " field") in
+    | _ -> fail_unexpectedf "invalid switch: expected %s field" name in
   (* Take the first element, which should be the expression, and consume
    * the start align if it exists. *)
   let expr, align, fields = match fields with
@@ -502,23 +493,23 @@ let request_of_xml fields : request_fields * reply option =
 
 (* ********** Declarations ********** *)
 type declaration =
-  | Import of string
-  | X_id of string
-  | X_id_union of string * string list
-  | Enum of string * enum
-  | Type_alias of string * string
+  [ `Import of string
+  | `X_id of string
+  | `X_id_union of string * string list
+  | `Enum of string * enum
+  | `Type_alias of string * string
 
-  | Event of string * int * event
-  | Generic_event of string * int * generic_event
-  | Event_struct of string * allowed_events list
-  | Event_alias of string * int * string
+  | `Event of string * int * event
+  | `Generic_event of string * int * generic_event
+  | `Event_struct of string * allowed_events list
+  | `Event_alias of string * int * string
 
-  | Error of string * int * error
-  | Error_alias of string * int * string
+  | `Error of string * int * error
+  | `Error_alias of string * int * string
 
-  | Struct of string * struct_fields
-  | Union of string * static_field list
-  | Request of string * int * request
+  | `Struct of string * struct_fields
+  | `Union of string * static_field list
+  | `Request of string * int * request ]
 
 
 
@@ -528,22 +519,22 @@ let declaration_of_xml : Xml.xml -> declaration =
   function PCData _ -> raise failure | Element x' ->
   match x' with
   | "import", [], [PCData file] ->
-    Import file
+    `Import file
 
   | "xidtype",  ["name", id], [] ->
-    X_id id
+    `X_id id
 
   | "xidunion", ["name", id], children ->
     let types = List.map xid_union_of_xml children in
-    X_id_union (id, types)
+    `X_id_union (id, types)
 
   | "enum", ["name", name], children ->
     let items = enum_of_xml children in
-    Enum (name, items)
+    `Enum (name, items)
 
   | "typedef", ["oldname", old_name; "newname", new_name], []
   | "typedef", ["newname", new_name; "oldname", old_name], [] ->
-    Type_alias (new_name, old_name)
+    `Type_alias (new_name, old_name)
 
   | "event", attrs, fields ->
     let is_generic = bool_attr_f attrs "xge" in
@@ -554,52 +545,52 @@ let declaration_of_xml : Xml.xml -> declaration =
     let doc, fields = consume_doc fields in
     if is_generic then
       let fields = List.map dynamic_field_of_xml fields in
-      Generic_event (name, code, { no_sequence_number; align; fields })
+      `Generic_event (name, code, { no_sequence_number; align; fields })
     else
       let fields = List.map static_field_of_xml fields in
-      Event (name, code, { no_sequence_number; align; fields })
+      `Event (name, code, { no_sequence_number; align; fields })
 
   | "eventstruct", ["name", name], allowed ->
     let allowed = List.map allowed_events_of_xml allowed in
-    Event_struct (name, allowed)
+    `Event_struct (name, allowed)
 
   | "eventcopy", attrs, [] ->
     let new_name = str_attr attrs "name" in
     let old_name = str_attr attrs "ref" in
     let number   = int_attr attrs "number" in
-    Event_alias (new_name, number, old_name)
+    `Event_alias (new_name, number, old_name)
 
   | "error", attrs, fields ->
     let name = str_attr attrs "name" in
     let code = int_attr attrs "number" in
     let align, fields = consume_align fields in
     let fields = List.map static_field_of_xml fields in
-    Error (name, code, { align; fields })
+    `Error (name, code, { align; fields })
 
   | "errorcopy", attrs, [] ->
     let new_name = str_attr attrs "name" in
     let old_name = str_attr attrs "ref" in
     let number   = int_attr attrs "number" in
-    Error_alias (new_name, number, old_name)
+    `Error_alias (new_name, number, old_name)
 
   | "union", ["name", name], fields ->
     let fields = List.map static_field_of_xml fields in
-    Union (name, fields)
+    `Union (name, fields)
 
   | "struct", ["name", name], fields ->
     let switch, fields = consume_switch fields in
     let fields = List.map static_field_of_xml fields in
-    Struct (name, { fields; switch })
+    `Struct (name, { fields; switch })
 
   | "request", attrs, fields ->
     let name = str_attr attrs "name" in
     let opcode = int_attr attrs "opcode" in
     let combine_adjacent = bool_attr_t attrs "combine-adjacent" in
     let params, reply = request_of_xml fields in
-    Request (name, opcode, { combine_adjacent; params; reply })
+    `Request (name, opcode, { combine_adjacent; params; reply })
 
   | n, _, _ ->
-    fail_unexpected ("invalid declaration: " ^ n)
+    fail_unexpectedf "invalid declaration: %s" n
 
 
 

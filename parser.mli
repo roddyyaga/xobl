@@ -68,18 +68,21 @@ type required_start_align =
 
 type enum_items = (string * int) list
 
-type mask =
-  { vals  : enum_items
-  ; flags : enum_items }
 
+(** Enums represent two very different things: enumerations and bitmasks.
+{ul {- Enumerations are simple mappings from constants to ints.}
+    {- Bitmasks are can have both "bit" and "value" items, where the bit items
+       are the 0-based position of the bit in the bitmask (e.g. 2 is 1 << 2),
+       and the value items are useful predefined values.}} *)
+(* At this point in the compilation we still don't know whether an enum
+   declaration is defining an enumeration or a bitmask; we have to look at how
+   they're referred to in other forms to determine that.
+   We used to determine this by just looking at how many <bit> values were
+   defined, but it turns out that f***ing Xinput uses the <bit> syntax as a
+   shorthand for defining a value in an enumeration. *)
 type enum =
-  [ `Mask of mask
-  (** Masks are can have both "bit" and "value" items, where the bit items
-   * are the 0-based position of the bit in the bitmask (e.g. 2 is 1 << 2),
-   * and the value items are useful predefined values. *)
-  | `Enum of enum_items
-  (** Simple mappings from constants to ints. *)
-  ]
+  { vals : enum_items
+  ; bits : enum_items }
 
 
 type binop =
@@ -253,65 +256,66 @@ type request =
 
 
 type declaration =
-  | Import of string
+  [ `Import of string
   (** Expose the types declared in another extension to the current one.
    * The argument is the "file_name" field in the extension_info of the
    * referenced module. *)
 
-  | X_id of string
+  | `X_id of string
   (** Declare a type alias to u32 representing a generic X resource ID. *)
 
-  | X_id_union of string * string list
+  | `X_id_union of string * string list
   (** Declare an union type of XIDs. *)
 
-  | Enum of string * enum
+  | `Enum of string * enum
   (** Declare an enum or a bit mask. *)
 
-  | Type_alias of string * string
+  | `Type_alias of string * string
   (** Alias a type (basic type, XID union or enum/mask) to a new name.
    * (new, old) *)
   (* One might be led to think that type aliases to another type alias are not
    * allowed, and you'd be right if it weren't for xkb. *)
 
-  | Event of string * int * event
+  | `Event of string * int * event
   (** Something happened on the X server, and the client was informed.
    * For most events we only need to generate the parsing code, but we need to
    * be able to serialize those defined in event structs. *)
 
-  | Generic_event of string * int * generic_event
+  | `Generic_event of string * int * generic_event
   (** Generic events are events that don't have a fixed size. They have a
    * completely separate namespace from normal ones, so we need to account
    * for collisions. *)
 
-  | Event_struct of string * allowed_events list
+  | `Event_struct of string * allowed_events list
   (** Events that we need to be able to serialize. This creates a new struct
     * type that can be used in requests and such. *)
 
-  | Event_alias of string * int * string
+  | `Event_alias of string * int * string
   (** Alias an event with a new event name and number. (new, num, old) *)
 
-  | Error of string * int * error
+  | `Error of string * int * error
   (** Something went wrong with a request made by the client. These only need
    * to be parsed. *)
 
-  | Error_alias of string * int * string
+  | `Error_alias of string * int * string
   (** Alias an error with a new event name and number. (new, num, old) *)
 
-  | Struct of string * struct_fields
+  | `Struct of string * struct_fields
   (** Declare a data structure. Clients are probably expected to be able to
    * both encode and decode them, but we could also analyze their usage and
    * only output code for either encoding or decoding (or none, if they're
    * never used). *)
 
-  | Union of string * static_field list
+  | `Union of string * static_field list
   (** Represents a field in another struct that may be any one of the fields
    * listed in the union. It should be as big as the biggest element in the
    * list. *)
 
-  | Request of string * int * request
+  | `Request of string * int * request
   (** A request the client makes to the server. Should be encoded as a function
    * that takes whatever parameters are listed in the params field.
    * Some requests send a reply back to the client. *)
+  ]
 
 
 type extension_info =

@@ -47,6 +47,30 @@ let load_extension file_name : X.protocol_file =
   |> X.parse_file
 
 
+(*
+module type Prev_pass = sig
+  type declaration
+  type extension
+end
+
+
+module type Curr_pass = sig
+
+end
+
+
+module Pass
+  (P : Prev_pass)
+  (C : Curr_pass) : =
+struct
+  type extension = C.declaration
+
+  val run : P.extension String_map.t -> extension String_map.t
+end
+*)
+
+
+
 (** In which we load every extension and abstract imports into the extension
    information. *)
 module Pass_1 = struct
@@ -128,12 +152,31 @@ module Pass_2 = struct
     | `Request of string * int * X.request ]
 
 
-  let delete_xids : P.declaration_p1 -> declaration_p2 = function
+  let delete_xids' : P.declaration_p1 -> declaration_p2 = function
     | `X_id id ->
       `Type_alias (id, "CARD32")
 
     | #declaration_p2 as d ->
       d
+
+
+  type extension_p2 =
+    { name         : string
+    ; file_name    : string
+    ; query_name   : string option
+    ; version      : (int * int) option
+    ; imports      : string list
+    ; declarations : declaration_p2 list }
+
+
+  let delete_xids (ext : P.extension_p1) : extension_p2 =
+    let declarations = List.map delete_xids' ext.declarations in
+    { name = ext.name
+    ; file_name = ext.file_name
+    ; query_name = ext.query_name
+    ; version = ext.version
+    ; imports = ext.imports
+    ; declarations }
 end
 
 
@@ -190,31 +233,250 @@ module Pass_3 = struct
     | `Request of string * int * X.request ]
 
 
-  let resolve_prims : P.declaration_p2 -> declaration_p3 = function
+  let resolve_prims' : P.declaration_p2 -> declaration_p3 = function
     | `Type_alias (name, id) as d ->
       (match Prim.of_string id with
       | Some p -> `Prim (name, p)
       | None   -> d)
 
     | #P.declaration_p2 as d -> d
+
+
+  type extension_p3 =
+    { name         : string
+    ; file_name    : string
+    ; query_name   : string option
+    ; version      : (int * int) option
+    ; imports      : string list
+    ; declarations : declaration_p3 list }
+
+
+  let resolve_prims (ext : P.extension_p2) : extension_p3 =
+    let declarations = List.map resolve_prims' ext.declarations in
+    { name = ext.name
+    ; file_name = ext.file_name
+    ; query_name = ext.query_name
+    ; version = ext.version
+    ; imports = ext.imports
+    ; declarations }
+end
+
+
+module Ref = struct
+  type t =
+    | Cur of string
+    | Ext of string * string
 end
 
 
 
-let%test_unit _ =
+(** In which we resolve type aliases. *)
+module Pass_4 = struct
+  module P = Pass_3
+
+  type x_type =
+    [ `Prim of Ref.t
+    | `Enum of Ref.t
+    | `X_id_union of Ref.t
+    | `Struct of Ref.t
+    | `Union of Ref.t
+    | `Event_struct of Ref.t ]
+
+  type common_p3_p4 =
+    [ `Prim of string * Prim.t
+    | `Enum of string * X.enum
+    | `X_id_union of string * string list
+
+    | `Event of string * int * X.event
+    | `Generic_event of string * int * X.generic_event
+    | `Event_struct of string * X.allowed_events list
+    | `Event_alias of string * int * string
+
+    | `Error of string * int * X.error
+    | `Error_alias of string * int * string
+
+    | `Struct of string * X.struct_fields
+    | `Union of string * X.static_field list
+    | `Request of string * int * X.request ]
+
+  type declaration_p4 =
+    [ common_p3_p4
+    | `Alias of string * x_type ]
+
+
+  let rec alias_of_decl exts curr_ext ref_t t : P.declaration_p3 -> x_type option = function
+    | `Prim (name, _) when name = t ->
+      Some (`Prim (ref_t name))
+    | `Enum (name, _) when name = t ->
+      Some (`Enum (ref_t name))
+    | `X_id_union (name, _) when name = t ->
+      Some (`X_id_union (ref_t name))
+    | `Struct (name, _) when name = t ->
+      Some (`Struct (ref_t name))
+    | `Type_alias (name, old) when name = t ->
+      (* Recursively resolve the alias to the old type until we find a proper
+       * type declaration. This probably gets very inefficient, but
+       * I'm pretty sure it only happens once.
+       * NOTE: this is not entirely correct, because we're aliasing to the
+       * original declaration's name rather than the aliased one, but it
+       * shouldn't cause any trouble. *)
+      let t = resolve_alias exts curr_ext old in
+      Some t
+    | _ ->
+      None
+
+  and resolve_alias (exts : P.extension_p3 String_map.t) (curr_ext : P.extension_p3) name =
+    let alias = alias_of_decl exts in
+    match string_split ':' name with
+    | Some (ext_id, name) ->
+      let ext = String_map.find ext_id exts in
+      list_get_exn (alias ext (fun x -> Ref.Ext (ext_id, x)) name) ext.declarations
+    | None ->
+      list_get (alias curr_ext (fun x -> Ref.Cur x) name) curr_ext.declarations
+      |> Option.with_default_lazy (lazy begin
+        curr_ext.imports |> list_get_exn (fun ext_id ->
+          let ext = String_map.find ext_id exts in
+          list_get (alias ext (fun x -> Ref.Ext (ext_id, x)) name)
+            ext.declarations)
+      end)
+
+
+  type extension_p4 =
+    { name         : string
+    ; file_name    : string
+    ; query_name   : string option
+    ; version      : (int * int) option
+    ; imports      : string list
+    ; declarations : declaration_p4 list }
+
+
+  let resolve_aliases (exts : P.extension_p3 String_map.t) : extension_p4 String_map.t =
+    String_map.fold exts ~init:String_map.empty ~f:(fun ~key ~data:ext acc ->
+      let decls = ListLabels.map ext.declarations ~f:(function
+        | `Type_alias (name, t) ->
+          let t = resolve_alias exts ext t in
+          `Alias (name, t)
+
+        | #common_p3_p4 as d -> d
+      ) in
+      let ext =
+        { name = ext.name; file_name = ext.file_name
+        ; query_name = ext.query_name; version = ext.version
+        ; imports = ext.imports; declarations = decls } in
+      String_map.add acc ~key ~data:ext
+    )
+end
+
+
+
+(** In which we resolve event structs. *)
+module Pass_5 = struct
+  module P = Pass_4
+
+  type x_type = Pass_4.x_type
+
+  type common_p4_p5 =
+    [ `Prim of string * Prim.t
+    | `Enum of string * X.enum
+    | `X_id_union of string * string list
+
+    | `Struct of string * X.struct_fields
+    | `Union of string * X.static_field list
+
+    | `Alias of string * x_type
+
+    | `Event of string * int * X.event
+    | `Generic_event of string * int * X.generic_event
+    | `Event_alias of string * int * string
+
+    | `Error of string * int * X.error
+    | `Error_alias of string * int * string
+
+    | `Request of string * int * X.request ]
+
+  type declaration_p5 =
+    [ common_p4_p5
+    | `Event_struct of string * Ref.t list ]
+
+
+  let gather_events max min acc : P.declaration_p4 -> string list = function
+    | `Event (name, c, _) when c >= min && c <= max -> name :: acc
+    | _ -> acc
+
+
+  let resolve (exts: P.extension_p4 String_map.t) : P.declaration_p4 -> declaration_p5 = function
+    | `Event_struct (name, events) ->
+      let evs = events |> List.map (fun { X.extension; opcode_range = (r1, r2) } ->
+        (* For some reason event struct refers to an extension by its name
+         * rather than its filename, so we have no choice but to find the
+         * module like this. *)
+        let ext_id, ext = Option.get @@ String_map.fold exts ~init:None ~f:(
+          fun ~key:id ~data:ext -> function
+            | None when ext.P.name = extension -> Some (id, ext)
+            | Some x -> Some x
+            | None -> None
+        ) in
+        (* The order is supposedly min, max but you can never be too sure. *)
+        let max, min = if r1 > r2 then r1, r2 else r2, r1 in
+        List.fold_left (gather_events max min) [] ext.P.declarations
+        |> List.map (fun x -> Ref.Ext (ext_id, x))
+      ) in
+      `Event_struct (name, List.flatten evs)
+
+    | #common_p4_p5 as d ->
+      d
+
+
+  type extension_p5 =
+    { name         : string
+    ; file_name    : string
+    ; query_name   : string option
+    ; version      : (int * int) option
+    ; imports      : string list
+    ; declarations : declaration_p5 list }
+
+
+  let folder exts ~key:(ext_id : string) ~data:(ext : P.extension_p4) acc =
+    let decls = List.map (resolve exts) ext.declarations in
+    let ext =
+      { name = ext.name; file_name = ext.file_name
+      ; query_name = ext.query_name; version = ext.version
+      ; imports = ext.imports
+      ; declarations = decls } in
+    String_map.add acc ~key:ext_id ~data:ext
+
+
+  let resolve_event_structs (exts : P.extension_p4 String_map.t) : extension_p5 String_map.t =
+    String_map.fold exts ~init:String_map.empty ~f:(folder exts)
+end
+
+
+
+let%test_unit "pipeline test" =
   let files =
     [ "bigreq"; "composite"; "damage"; "dpms"; "dri2"; "dri3"; "ge"; "glx"
     ; "present"; "randr"; "record"; "render"; "res"; "screensaver"; "shape"
     ; "shm"; "sync"; "xc_misc"; "xevie"; "xf86dri"; "xf86vidmode"; "xfixes"
     ; "xinerama"; "xinput"; "xkb"; "xprint"; "xproto"; "xselinux"; "xtest"
-    ; "xvmc"; "xv" ] in
-  let exts = List.map load_extension files in
-  let exts = List.map Pass_1.lift_imports exts in
-  let _exts = ListLabels.map exts ~f:(fun ext ->
-    let decls = List.map Pass_2.delete_xids ext.Pass_1.declarations in
-    let _decls = List.map Pass_3.resolve_prims decls in
-    ()
-  ) in
+    ; "xvmc"; "xv" ]
+  in
+  let exts =
+    ListLabels.map files ~f:(
+      fun fname -> fname
+      |> load_extension
+      |> Pass_1.lift_imports
+      |> Pass_2.delete_xids
+      |> Pass_3.resolve_prims
+    )
+  in
+  let exts = ListLabels.fold_left exts
+    ~init:String_map.empty
+    ~f:(fun acc ext -> String_map.add acc ~key:ext.Pass_3.file_name ~data:ext)
+  in
+  let _exts = exts
+    |> Pass_4.resolve_aliases
+    |> Pass_5.resolve_event_structs
+  in
   ()
 
 (*

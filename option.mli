@@ -12,7 +12,7 @@ val map : ('a -> 'b) -> 'a option -> 'b option
 val bind : ('a -> 'b option) -> 'a option -> 'b option
 (**  *)
 
-val apply : ('a -> unit) -> 'a option -> unit
+val iter : ('a -> unit) -> 'a option -> unit
 (**  *)
 
 val with_default_lazy : 'a Lazy.t -> 'a option -> 'a

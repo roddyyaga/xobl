@@ -66,7 +66,8 @@ type required_start_align =
   ; offset : int option }
 
 
-type enum_items = (string * int) list
+type enum_vals = (string * int64) list
+type enum_bits = (string * int) list
 
 
 (** Enums represent two very different things: enumerations and bitmasks.
@@ -81,8 +82,8 @@ type enum_items = (string * int) list
    defined, but it turns out that f***ing Xinput uses the <bit> syntax as a
    shorthand for defining a value in an enumeration. *)
 type enum =
-  { vals : enum_items
-  ; bits : enum_items }
+  { vals : enum_vals
+  ; bits : enum_bits }
 
 
 type binop =

@@ -105,12 +105,13 @@ let xid_union_of_xml = function
 
 
 (* ********** Enums ********** *)
-type enum_items = (string * int) list
+type enum_vals = (string * int64) list
+type enum_bits = (string * int) list
 
 
 type enum =
-  { vals : enum_items
-  ; bits : enum_items }
+  { vals : enum_vals
+  ; bits : enum_bits }
 
 
 let enum_of_xml items =
@@ -119,7 +120,7 @@ let enum_of_xml items =
     | [] ->
       vals, bits, None
     | Element ("item", ["name", name], [Element ("value", [], [PCData v])]) :: rest ->
-      let vals = (name, int_of_string v) :: vals in
+      let vals = (name, Int64.of_string v) :: vals in
       parse_items (vals, bits) rest
     | Element ("item", ["name", name], [Element ("bit",   [], [PCData v])]) :: rest ->
       let bits = (name, int_of_string v) :: bits in

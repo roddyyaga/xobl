@@ -14,7 +14,7 @@ let bind f = function
   | Some x -> f x
   | None -> None
 
-let apply f = function
+let iter f = function
   | Some x -> f x
   | None -> ()
 

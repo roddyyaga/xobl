@@ -4,38 +4,62 @@
  * analyzing other declarations should preferably be inferred here. *)
 
 (** I should probably clarify some of the concepts that are introduced in the
- * spec here, because the official documentation sure as hell doesn't.
- *
- * "Types" are used for two different purposes in the spec, but the
- * documentation doesn't make much of a distinction between these purposes and
- * often uses them interchangeably. I'll try to clear that up here.
- * There's essentially three kinds of "types" in the X11 spec:
- * - basic types
- * - enumerated types
- * - composite types
- *
- * Basic types are stuff like uint8, float32, bool, etc.; they're all
- * different representation of numbers. Their purpose is mostly to define the
- * wire representation of the numbers of that type, i.e. the size in bytes and
- * how to parse and serialize them.
- * XIDs and XID unions are included in this category, because they all map to
- * u32.
- *
- * Enumerated types, to which enums and masks belong, are used to constrain the
- * values that a request may take. They may be used to offer some useful
- * named defaults, or to make sure that you don't send a request that contains
- * an illegal value.
- * Enumerated types don't have a default wire representation: they have to be
- * assigned a basic type to be used anywhere. Basically this means that
- * we'll have to keep track of all the basic types assigned to a certain enum
- * throughout the codebase and generate multiple conversion functions as
- * needed.
- *
- * Composite types are the structs. Like primitive types, their purpose is to
- * define the wire representation of a record of values. They include
- * information such as the order of the values, padding bytes, alignment of
- * certain values, and more. [FINISH THIS]
- * *)
+   spec here, because the official documentation sure as hell doesn't.
+
+   {2 Types}
+
+   "Types" are used for two different purposes in the spec, but the
+   documentation doesn't make much of a distinction between these purposes and
+   often uses them interchangeably. I'll try to clear that up here.
+   There's essentially three kinds of "types" in the X11 spec:
+   - basic types
+   - enumerated types
+   - composite types
+
+   {3 Basic types}
+   Basic types are stuff like uint8, float32, bool, etc.; they're all
+   different representation of numbers. Their purpose is mostly to define the
+   wire representation of the numbers of that type, i.e. the size in bytes and
+   how to parse and serialize them.
+   XIDs and XID unions are included in this category, because they all map to
+   u32.
+
+   {3 Enumerated types}
+   Enumerated types, to which enums and masks belong, are used to constrain the
+   values that a request may take. They may be used to offer some useful
+   named defaults, or to make sure that you don't send a request that contains
+   an illegal value.
+   Enumerated types don't have a default wire representation: they have to be
+   assigned a basic type to be used anywhere. Basically this means that
+   we'll have to keep track of all the basic types assigned to a certain enum
+   throughout the codebase and generate multiple conversion functions as
+   needed.
+
+   {3 Composite types}
+   Composite types are the structs. Like primitive types, their purpose is to
+   define the wire representation of a record of values. They include
+   information such as the order of the values, padding bytes, alignment of
+   certain values, and more.
+
+   {2 Namespaces}
+
+   The declarations have a few separate namespaces:
+
+   - types
+   - events
+   - generic events
+   - errors
+   - requests
+
+   {3 Name clashes}
+   Name clashes {i within} these namespaces are allowed between different
+   extensions. To disambiguate in the case that a declaration references a
+   name exported by two or more extensions currently in scope, the extension's
+   ID (here aliased as file_name) is prefixed to the name with a colon, such
+   as "xproto:PIXMAP".
+   Note that some extensions DO NOT follow this rule, in which case I assumed
+   that names defined in the current extension take precedence over the rest.
+ *)
 
 
 type pad =
@@ -75,12 +99,9 @@ type enum_bits = (string * int) list
     {- Bitmasks are can have both "bit" and "value" items, where the bit items
        are the 0-based position of the bit in the bitmask (e.g. 2 is 1 << 2),
        and the value items are useful predefined values.}} *)
-(* At this point in the compilation we still don't know whether an enum
-   declaration is defining an enumeration or a bitmask; we have to look at how
-   they're referred to in other forms to determine that.
-   We used to determine this by just looking at how many <bit> values were
-   defined, but it turns out that f***ing Xinput uses the <bit> syntax as a
-   shorthand for defining a value in an enumeration. *)
+(* At this point in the compilation we don't know whether an enum declaration
+   is declaring an enumeration, a bitmask, or both: we have to look at how
+   they're referred to in other forms to determine that.  *)
 type enum =
   { vals : enum_vals
   ; bits : enum_bits }

@@ -74,7 +74,6 @@ let pass (type n o)
 
 
 
-
 (*
 module type Prev_pass = sig
   type declaration
@@ -272,10 +271,12 @@ module Pass_3 = struct
 end
 
 
+
+(** A reference to an identifier. *)
 module Ref = struct
   type t =
-    | Cur of string
-    | Ext of string * string
+    | Cur of string          (** Refers to an ID in the same extension. *)
+    | Ext of string * string (** Refers to an ID in a different extension. *)
 end
 
 
@@ -524,11 +525,10 @@ module Pass_7 = struct
     | `Union of string * X.static_field list
     | `Event_struct of string * Ref.t list
 
+    | `Alias of string * x_type
     | `Event_alias of string * int * Ref.t
     | `Generic_event_alias of string * int * Ref.t
     | `Error_alias of string * int * Ref.t
-
-    | `Alias of string * x_type
 
     | `Event of string * int * X.event
     | `Generic_event of string * int * X.generic_event
@@ -594,11 +594,10 @@ module Pass_8 = struct
     | `Event_struct of string * Ref.t list
     | `Card32_union of string * Ref.t list
 
+    | `Alias of string * x_type
     | `Event_alias of string * int * Ref.t
     | `Generic_event_alias of string * int * Ref.t
     | `Error_alias of string * int * Ref.t
-
-    | `Alias of string * x_type
 
     | `Event of string * int * X.event
     | `Generic_event of string * int * X.generic_event
@@ -612,14 +611,22 @@ module Pass_8 = struct
     | `Enum_and_mask of string * X.enum ]
 
 
+  (* So now we need to about three passes over the whole AST.
+   * In the first we build a table of enums with mutable flags to tell
+   * whether it's an enum and/or a mask.
+   * In the second we walk every structure with fields in the AST and
+   * set those flags when we encounter an enum or mask reference.
+   * In the third we look for the enums again and use the information we
+   * got from the previous two to replace it with an enum, mask, or "both"
+   * declaration. *)
 
-  type enum' =
+  type enum_table =
     { name : string
     ; ext  : string
     ; mutable is_enum : bool
     ; mutable is_mask : bool }
 
-  let enum_table : enum' list ref = ref []
+  let enum_table : enum_table list ref = ref []
 
   let push_enum ext name =
     enum_table := ({ ext; name; is_enum = false; is_mask = false } :: !enum_table)
@@ -647,14 +654,13 @@ module Pass_8 = struct
       )
     | None ->
       let { imports; _ } = String_map.find used_in exts in
-      !enum_table
-      |> list_first (fun enum ->
+      list_first (fun enum ->
         if enum.name = name && enum.ext = used_in then (
           if is_enum then enum.is_enum <- true;
           if is_mask then enum.is_mask <- true;
           Some ()
         ) else
-          None)
+          None) !enum_table
       |> Option.with_default_lazy (lazy (!enum_table |> list_first_exn (fun enum ->
         if enum.name = name && List.mem enum.ext (imports) then (
           if is_enum then enum.is_enum <- true;
@@ -668,10 +674,6 @@ module Pass_8 = struct
 
   let lookup_enum ext name =
     List.find (fun enum -> enum.name = name && enum.ext = ext) !enum_table
-
-
-  (* So here we need to do two passes: one to find out what enums are referred
-   * to and another to actually replace the enums with that information. *)
 
 
   (* I also thought about checking whether a field is referred to in enumref
@@ -748,6 +750,10 @@ module Pass_8 = struct
     )
 
 
+  (* Additional pass to resolve enum refs. *)
+
+
+
   let resolve_enum curr_ext : P.declaration_p7 -> declaration_p8 = function
     | `Enum (name, items) ->
       let enum = lookup_enum curr_ext.file_name name in
@@ -771,6 +777,38 @@ module Pass_8 = struct
   let resolve_enums exts =
     fill_usage exts;
     pass resolve_enum exts
+end
+
+
+
+module Pass_9 = struct
+  module P = Pass_8
+
+  type x_type = Pass_4.x_type
+
+  type common_p8_p9 =
+    [ `Prim of string * Prim.t
+    | `Enum of string * X.enum
+    | `Mask of string * X.enum
+    | `Enum_and_mask of string * X.enum
+
+    | `Struct of string * X.struct_fields
+    | `Union of string * X.static_field list
+    | `Event_struct of string * Ref.t list
+    | `Card32_union of string * Ref.t list
+
+    | `Event_alias of string * int * Ref.t
+    | `Generic_event_alias of string * int * Ref.t
+    | `Error_alias of string * int * Ref.t
+
+    | `Alias of string * x_type
+
+    | `Event of string * int * X.event
+    | `Generic_event of string * int * X.generic_event
+    | `Error of string * int * X.error
+    | `Request of string * int * X.request ]
+
+
 end
 
 
@@ -805,7 +843,6 @@ let%test_unit "pipeline test" =
   in
   ()
 
-(*
 
 
 module Pass_9 = struct
@@ -1145,4 +1182,3 @@ module Pass_9 = struct
       String_map.add acc ~key:ext_id ~data:ext
     )
 end
-  *)

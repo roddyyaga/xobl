@@ -45,7 +45,7 @@ type id =
   | Ext_id of string * string (** ID in a different extension. *)
 
 
-(** *)
+(** An X type which might also be a primitive type. *)
 type x_type =
   | Prim of string
   | Ref of id
@@ -211,6 +211,7 @@ end
 
 
 
+(** In which we resolve {b all} types *)
 module Pass_1 = struct
   module P = Pass_0
 

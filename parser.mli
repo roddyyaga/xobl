@@ -1,47 +1,40 @@
-(** The purpose of the Parser is to parse the XML specification into
- * semantically equivalent OCaml structure, with little to no change and
- * preserving all information. Information that can be inferred without
- * analyzing other declarations should preferably be inferred here. *)
+(** The purpose of the [Parser] is to parse the XML specification into
+   semantically equivalent OCaml structures, with little to no change and
+   preserving all information. Information that can be inferred without
+   analyzing other declarations should preferably be inferred here. *)
 
-(** I should probably clarify some of the concepts that are introduced in the
-   spec here, because the official documentation sure as hell doesn't.
+(** {2 Types}
+   Types in the spec refer to two different kinds of types, which we'll call
+   {b primitive} and {b composite}.
+   Types are used to give a wire representation to the values defined in the
+   spec, so they define size, alignment, and signedness in the case of ints.
 
-   {2 Types}
+   {3 Primitive types}
+   Primitive types such as [INT8], [CARD16] and [float] are used to define
+   the wire representation of numbers. All types except for [void] should map
+   to a certain type in the output bindings.
 
-   TODO REWRITE THIS, enums are not used as other types and thus are NOT TYPES.
-
-   "Types" are used for two different purposes in the spec, but the
-   documentation doesn't make much of a distinction between these purposes and
-   often uses them interchangeably. I'll try to clear that up here.
-   There's essentially three kinds of "types" in the X11 spec:
-   - basic types
-   - enumerated types
-   - composite types
-
-   {3 Basic types}
-   Basic types are stuff like uint8, float32, bool, etc.; they're all
-   different representation of numbers. Their purpose is mostly to define the
-   wire representation of the numbers of that type, i.e. the size in bytes and
-   how to parse and serialize them.
-   XIDs and XID unions are included in this category, because they all map to
-   u32.
-
-   {3 Enumerated types}
-   Enumerated types, to which enums and masks belong, are used to constrain the
-   values that a request may take. They may be used to offer some useful
-   named defaults, or to make sure that you don't send a request that contains
-   an illegal value.
-   Enumerated types don't have a default wire representation: they have to be
-   assigned a basic type to be used anywhere. Basically this means that
-   we'll have to keep track of all the basic types assigned to a certain enum
-   throughout the codebase and generate multiple conversion functions as
-   needed.
+   The [void] type is used for defining things where the type doesn't matter
+   (like padding) or where it cannot be known (like in GetProperty).
 
    {3 Composite types}
-   Composite types are the structs. Like primitive types, their purpose is to
-   define the wire representation of a record of values. They include
-   information such as the order of the values, padding bytes, alignment of
-   certain values, and more.
+   Composite types are aggregations of primitive types in the form of simple
+   fields, lists, or expressions, and padding and alignment information.
+
+   Their size is known at compile time except for generic events, requests, and
+   responses, which might include a variable length list as their last element.
+   Requests may also include expression fields, whose value depends on the
+   value of other fields in the request struct.
+
+   Structs and requests may include a switch, which uses another field to
+   determine which additional fields should be included in the struct.
+
+   Unions are an earlier version of switches, which require additional
+   processing to determine which field is included (the method used depends on
+   the extension, of course: xkb uses a field named "type" which refers to
+   an enum while xproto has an ad hoc field in the containing struct).
+   These have to be patched somehow.
+
 
    {2 Namespaces}
 
@@ -237,10 +230,10 @@ type generic_event =
 
 type allowed_events =
   { extension    : string
-  (** The extension the events are defined in. *)
+  (** The extension-name ("name" here) of the extension the events are defined
+   * in. *)
   (* Once again XInput breaks all conventions by referring to an
-   * extension not by its "header" field ("file_name" here),
-   * but by its "extension-name". *)
+   * extension by its extension-name rather than its header name. *)
   ; opcode_range : int * int
   (** Only events that have opcodes within this range are allowed. *)
   }

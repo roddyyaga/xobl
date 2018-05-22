@@ -1,14 +1,4 @@
-let rec list_extract f = function
-  | [] -> None, []
-  | x :: rest ->
-    match f x with
-    | Some x ->
-      Some x, rest
-    | None ->
-      (* Not tail-recursive, but eh *)
-      let found, ls = list_extract f rest in
-      found, x :: ls
-
+open Util
 
 (* The "_o" suffix represents an attribute that may not be present  *)
 
@@ -90,7 +80,7 @@ let consume_align = function
 type doc = unit
 
 let consume_doc =
-  list_extract (function
+  List'.extract (function
     | Xml.Element ("doc", _, _) -> Some ()
     | _ -> None
   )
@@ -400,7 +390,7 @@ and case_of_xml name fields =
 
 
 let consume_switch =
-  list_extract (function
+  List'.extract (function
     | Xml.Element ("switch", ["name", name], fields) ->
       let switch = switch_of_xml fields in
       Some (name, switch)

@@ -8,6 +8,8 @@
 
    {2 Types}
 
+   TODO REWRITE THIS, enums are not used as other types and thus are NOT TYPES.
+
    "Types" are used for two different purposes in the spec, but the
    documentation doesn't make much of a distinction between these purposes and
    often uses them interchangeably. I'll try to clear that up here.
@@ -45,7 +47,7 @@
 
    The declarations have a few separate namespaces:
 
-   - types
+   - types and enums
    - events
    - generic events
    - errors
@@ -57,6 +59,7 @@
    name exported by two or more extensions currently in scope, the extension's
    ID (here aliased as file_name) is prefixed to the name with a colon, such
    as "xproto:PIXMAP".
+
    Note that some extensions DO NOT follow this rule, in which case I assumed
    that names defined in the current extension take precedence over the rest.
  *)
@@ -201,13 +204,13 @@ type switch =
  * contains in the switch if it's true.
  * If there are multiple expressions, they should be chained with ORs. *)
 and case =
-  { exprs : expression list
-  ; name : string option
+  { exprs   : expression list
+  ; name    : string option
   (* Why would a case expression ever need a goddamn name?
    * What is it for? XInput only knows. *)
   ; align_c : required_start_align option
-  ; fields : static_field list
-  ; switch : (string * switch) option }
+  ; fields  : static_field list
+  ; switch  : (string * switch) option }
 
 
 
@@ -293,7 +296,7 @@ type declaration =
   (** Declare an enum or a bit mask. *)
 
   | `Type_alias of string * string
-  (** Alias a type (basic type, XID union or enum/mask) to a new name.
+  (** Alias a type to a new name.
    * (new, old) *)
   (* One might be led to think that type aliases to another type alias are not
    * allowed, and you'd be right if it weren't for xkb. *)

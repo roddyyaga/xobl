@@ -215,6 +215,7 @@ end
 module Pass_1 = struct
   module P = Pass_0
 
+  (* Struct fields *)
   type field_type =
     { typ  : x_type
     ; enum : X.allowed_vals option }
@@ -247,6 +248,7 @@ module Pass_1 = struct
     ; switch  : (string * switch) option }
 
 
+  (* Structs *)
   type event =
     { no_sequence_number : bool
     ; align  : X.required_start_align option
@@ -377,6 +379,7 @@ module Pass_1 = struct
       let fields = List.map (resolve_in_dynamic_field ext) fields in
       let switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) switch in
       { align; fields; switch }
+
 
   (* Finally, we get to resolve the damn things. *)
 

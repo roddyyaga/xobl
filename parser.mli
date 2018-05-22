@@ -6,7 +6,9 @@
 (** Here follows an explaination of some of the most puzzling aspects of the
 X11 spec.
 
+
 {2 Types}
+
 Types in the spec refer to two different kinds of types, which we'll call
 {b primitive} and {b composite}.
 Types are used to give a wire representation to the values defined in the spec,
@@ -96,9 +98,9 @@ type padding =
   { pad       : pad
   ; serialize : bool
   (* This flag is only used in xkb to mark "true", if omitted it'll always be
-   * false. The documentation mentions that it's only needed for ABI
-   * compatibility with legacy (legacy what???) and thus should not be used
-   * in new pads. I don't really know what it means. *)
+     false. The documentation mentions that it's only needed for ABI
+     compatibility with legacy (legacy what???) and thus should not be used
+     in new pads. I don't really know what it means. *)
   }
 
 
@@ -119,14 +121,7 @@ type enum_vals = (string * int64) list
 type enum_bits = (string * int) list
 
 
-(** Enums represent two very different things: enumerations and bitmasks.
-{ul {- Enumerations are simple mappings from constants to ints.}
-    {- Bitmasks are can have both [bit] and [value] items, where the bit items
-       are the 0-based position of the bit in the bitmask (e.g. 2 is 1 << 2),
-       and the value items are useful predefined values.}} *)
-(* At this point in the compilation we don't know whether an enum declaration
-   is declaring an enumeration, a bitmask, or both: we have to look at how
-   they're referred to in other forms to determine that.  *)
+(** See above for documentation. *)
 type enum =
   { vals : enum_vals
   ; bits : enum_bits }
@@ -148,10 +143,9 @@ type expression =
     (** The value of another field in the same structure. *)
   | `Param_ref of string * string
     (** The value of a field in a structure that contains the current one.
-     * (name, type) *)
+       (name, type) *)
   | `Enum_ref  of string * string
-    (** The value of an identifier in an enum.
-     * (enum, item) *)
+    (** The value of an identifier in an enum. (enum, item) *)
   | `Sum_of of string * expression option
     (** Sum of the elements in a list field. The expression, if present,
        should be applied to each list element in the element's context before
@@ -316,8 +310,7 @@ type declaration =
   (** Declare an enum or a bit mask. *)
 
   | `Type_alias of string * string
-  (** Alias a type to a new name.
-     (new, old) *)
+  (** Alias a type to a new name. (new, old) *)
   (* One might be led to think that type aliases to another type alias are not
      allowed, and you'd be right if it weren't for xkb. *)
 

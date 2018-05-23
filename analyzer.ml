@@ -2,15 +2,6 @@ module X = Parser
 open Util
 
 
-let resolve_extension_path name =
-  Filename.concat "xproto/src" (name ^ ".xml")
-
-
-let load_extension file_name : X.protocol_file =
-  resolve_extension_path file_name
-  |> X.parse_file
-
-
 
 type 'a extension =
   { name         : string
@@ -723,16 +714,11 @@ end
 
 
 
-let%test_unit "pipeline test" =
-  let files =
-    [ "bigreq"; "composite"; "damage"; "dpms"; "dri2"; "dri3"; "ge"; "glx"
-    ; "present"; "randr"; "record"; "render"; "res"; "screensaver"; "shape"
-    ; "shm"; "sync"; "xc_misc"; "xevie"; "xf86dri"; "xf86vidmode"; "xfixes"
-    ; "xinerama"; "xinput"; "xkb"; "xprint"; "xproto"; "xselinux"; "xtest"
-    ; "xvmc"; "xv" ]
-  in
-  let exts = List.map (fun f -> load_extension f |> Pass_0.lift_imports) files in
+let analyze_extensions exts =
+  let exts = List.map Pass_0.lift_imports exts in
   Cache.init exts;
-  let exts = List.map Pass_1.resolve_types exts in
-  let _exts = List.map Pass_2.resolve_enums exts in
-  ()
+  exts |> List.map (
+    fun ext -> ext
+    |> Pass_1.resolve_types
+    |> Pass_2.resolve_enums
+  )

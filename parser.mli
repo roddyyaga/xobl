@@ -104,14 +104,8 @@ type padding =
   }
 
 
-(* Something to do with an alignment checker. Should probably check out this
-   thread: https://lists.freedesktop.org/archives/xcb/2015-November/010557.html
-   The author of XEB is confused as to what this exactly is. XCB-types just
-   parses it into an "Alignment" type without giving an explaination and
-   without ever using it in XHB.
-   Most other bindings just ignore it.
-   I think we can safely conclude that nobody except whoever sent the patch
-   to add it knows what this is for. *)
+(* Something to do with an alignment checker. TODO check this out:
+   https://cgit.freedesktop.org/xcb/proto/commit/?id=c499401bdac3b87bd4f9cd4bc64cfd1781ab447f *)
 type required_start_align =
   { align  : int
   ; offset : int option }

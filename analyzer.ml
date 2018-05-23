@@ -137,6 +137,10 @@ module Cache : sig
   (** We want to gather usage statistics on the enums so that we can output
      the declarations that are needed, so we also need to know if the caller
      requests it as an enum or as mask. *)
+
+  type enum_refs = { enums : int; masks : int }
+
+  val enum_refs : unit -> enum_refs list
 end = struct
   type 'a table =
     { name : string
@@ -199,11 +203,8 @@ end = struct
     in
     lookup enum_table f ext
 
-  let print_enums () =
-    !enum_table |> List.iter (fun { name; ext; refs = { enums; masks } } ->
-      Printf.printf "%s:%s -> enums = %d | masks = %d\n"
-        ext name enums masks
-    )
+  let enum_refs () =
+    List.map (fun x -> x.refs) !enum_table
 
 
   let init =

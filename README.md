@@ -23,6 +23,7 @@ languages may easily be plugged in.
 ## Useful links
 * https://www.x.org/releases/X11R7.7/doc/
 * https://www.x.org/wiki/Development/
+* [](https://www.youtube.com/watch?v=_U0guRQrlMA)
 
 ## Other implementations generated from the spec
 * [Guile](https://github.com/mwitmer/guile-xcb)

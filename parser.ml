@@ -620,19 +620,3 @@ let parse_file fname : protocol_file =
 
   | _ ->
     fail_unexpected "invalid XCB root element"
-
-
-
-let%test_unit "all files are parsed without issues" =
-  let files =
-    [ "bigreq"; "composite"; "damage"; "dpms"; "dri2"; "dri3"; "ge"; "glx"
-    ; "present"; "randr"; "record"; "render"; "res"; "screensaver"; "shape"
-    ; "shm"; "sync"; "xc_misc"; "xevie"; "xf86dri"; "xf86vidmode"; "xfixes"
-    ; "xinerama"; "xinput"; "xkb"; "xprint"; "xproto"; "xselinux"; "xtest"
-    ; "xvmc"; "xv" ]
-  in
-  files |> List.iter (fun file ->
-    let fname = Filename.concat "xproto/src" (file ^ ".xml") in
-    let _ = parse_file fname in
-    ()
-  )

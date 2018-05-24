@@ -1,6 +1,6 @@
 ## STATUS
-Trying to understand the X protocol spec and turn it into something usable.
-Not nearly done.
+The parser is ostensibly complete. The analyzer is still missing many passes,
+and the generator is in its infancy.
 
 
 ## Contents
@@ -20,17 +20,25 @@ future I will attempt to partly functorize this so that generators for other
 languages may easily be plugged in.
 
 
-## Useful links
+## X documentation
 * https://www.x.org/releases/X11R7.7/doc/
 * https://www.x.org/wiki/Development/
-* [](https://www.youtube.com/watch?v=_U0guRQrlMA)
+* Many of the reasons behind decisions in the XCB protocol spec were documented in the commit messages on https://cgit.freedesktop.org/xorg/proto/xproto/
+
+## Porting Xlib applications to XCB
+* [Martin Gräßlin: KWin went XCB](https://www.youtube.com/watch?v=_U0guRQrlMA)
+* https://blog.martin-graesslin.com/blog/2013/02/porting-kwin-to-xcb-making-c-usable-through-raii/
+* https://blogs.oracle.com/solaris/porting-x-apps-to-xcb-v2
+* https://community.kde.org/KWin/Xcb
+* https://xcb.freedesktop.org/XcbPorting/
+* https://linuxx.info/porting-inputplug-to-xcb-2/
 
 ## Other implementations generated from the spec
-* [Guile](https://github.com/mwitmer/guile-xcb)
-* [Rust](https://github.com/sstewartgallus/rust-xcb)
-* [Ruby](https://github.com/nbaum/alembic)
-* [Javascript](https://github.com/sidorares/node-x11) (Node)
-* [Clojure](https://github.com/noodlewiz/xcljb)
-* [Emacs Lisp](https://github.com/ch11ng/xelb)
-* [Elixir](https://github.com/chrys-h/XEB)
-* [Haskell](https://github.com/aslatter/xhb) ([parser](https://github.com/aslatter/xcb-types))
+* Guile: [guile-xcb](https://github.com/mwitmer/guile-xcb)
+* Rust: [rust-xcb](https://github.com/sstewartgallus/rust-xcb)
+* Ruby: [alembic](https://github.com/nbaum/alembic)
+* Javascript (Node): [node-x11](https://github.com/sidorares/node-x11)
+* Clojure: [xcljb](https://github.com/noodlewiz/xcljb)
+* Emacs Lisp: [xelb](https://github.com/ch11ng/xelb)
+* Elixir: [XEB](https://github.com/chrys-h/XEB)
+* Haskell: [XHB](https://github.com/aslatter/xhb) ([parser](https://github.com/aslatter/xcb-types))

@@ -1,3 +1,6 @@
+type xid = int32
+
+
 type ('a, 'b) mask =
   | Flags of 'a list
   | Val of 'b

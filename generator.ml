@@ -23,8 +23,8 @@ let snake_cased name =
       | 'A' .. 'Z' as c ->
         (* We want to make sure something like GLXContext is turned into
            glxcontext and not g_l_x_context.
-           GLXContext -> glx_context instead?
-           ^ no, because DECnet would become de_cnet. *)
+           We can't turn it into glx_context because then DECnet would become
+           de_cnet. *)
         let prev = name.[i - 1] in
         if Char.lowercase_ascii prev = prev then (
           Buffer.add_char buf '_';
@@ -43,8 +43,27 @@ let id_str = function
     String.capitalize_ascii (snake_cased e) ^ "." ^ snake_cased n
 
 
+let prim_to_string =
+  let open Analyzer.Prim in function
+    | Void   -> "unit"
+    | Char   -> "char"
+    | Byte   -> "char"
+    | Bool   -> "bool"
+    | Int8   -> "int"
+    | Int16  -> "int"
+    | Int32  -> "int32"
+    | Fd     -> "int"
+    | Card8  -> "int"
+    | Card16 -> "int"
+    | Card32 -> "int32"
+    | Card64 -> "int64"
+    | Float  -> "float"
+    | Double -> "float"
+    | Xid    -> "xid"
+
+
 let x_type_str = function
-  | Analyzer.Basic t -> snake_cased t
+  | Analyzer.Prim t -> prim_to_string t
   | Analyzer.Ref id -> id_str id
 
 
@@ -78,6 +97,9 @@ let generate out (ext : Analyzer.Pass_2.extension_p2) =
       (* We need to know a few things here:
         - output an enumeration? a bitmask? both? (solved, sort of)
         - which types do we need conversion functions to and from for?
+        - for bitmasks, do we need to output conversion functions to the "val"
+          items too? (probably not, but maybe we could provide some compare
+          functions)
       *)
       ()
 

@@ -10,12 +10,12 @@ X11 spec.
 {2 Types}
 
 Types in the spec refer to two different kinds of types, which we'll call
-{b primitive} and {b composite}.
+{b basic} and {b composite}.
 Types are used to give a wire representation to the values defined in the spec,
 so they define size, alignment, and signedness in the case of ints.
 
-{3 Primitive types}
-Primitive types such as [INT8], [CARD16] and [float] are used to define the
+{3 Basic types}
+Basic types such as [INT8], [CARD16] and [float] are used to define the
 wire representation of numbers. All types except for [void] should map to a
 certain type in the output bindings.
 
@@ -23,7 +23,7 @@ The [void] type is used for defining things where the type doesn't matter
 (like padding) or where it cannot be known (like in [GetProperty]).
 
 {3 Composite types}
-Composite types are aggregations of primitive types in the form of simple
+Composite types are aggregations of basic types in the form of simple
 fields, lists, or expressions, and padding and alignment information.
 
 Their size is known at compile time except for generic events, requests, and
@@ -45,7 +45,7 @@ has an ad hoc field in the containing struct).
 
 Enums are basically named values. They do not represent types, as they do not
 have a wire representation of their own: they can only be used in conjunction
-with a primitive type, which defines the size and wire representation of the
+with a basic type, which defines the size and wire representation of the
 selected value.
 
 Enums are used for two different purposes: {b enumerations} and {b bitmasks}.

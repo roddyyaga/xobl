@@ -36,32 +36,47 @@ type id =
   | Ext_id of string * string (** ID in a different extension. *)
 
 
-(** An X primitive type. *)
+module Prim = struct
+  type t =
+    | Void
+    | Char
+    | Byte
+    | Bool
+    | Int8
+    | Int16
+    | Int32
+    | Fd
+    | Card8
+    | Card16
+    | Card32
+    | Card64
+    | Float
+    | Double
+    | Xid (** maps to a Card32 *)
+
+  let of_string = function
+    | "void"   -> Some Void
+    | "char"   -> Some Char
+    | "BYTE"   -> Some Byte
+    | "BOOL"   -> Some Bool
+    | "INT8"   -> Some Int8
+    | "INT16"  -> Some Int16
+    | "INT32"  -> Some Int32
+    | "fd"     -> Some Fd
+    | "CARD8"  -> Some Card8
+    | "CARD16" -> Some Card16
+    | "CARD32" -> Some Card32
+    | "CARD64" -> Some Card64
+    | "float"  -> Some Float
+    | "double" -> Some Double
+    | _        -> None
+end
+
+
+(** An X basic type. *)
 type x_type =
-  | Basic of string
+  | Prim of Prim.t
   | Ref of id
-
-
-let primitive_types =
-  [ "void"
-  ; "char"
-  ; "BYTE"
-  ; "BOOL"
-  ; "INT8"
-  ; "INT16"
-  ; "INT32"
-  ; "fd"
-  ; "CARD8"
-  ; "CARD16"
-  ; "CARD32"
-  ; "CARD64"
-  ; "float"
-  ; "double"
-  ; "XID" (** maps to a card32 *)
-  ]
-
-
-let is_primitive x = List.mem x primitive_types
 
 
 module Pass_0 = struct
@@ -176,10 +191,9 @@ end = struct
     lookup type_table (fun x -> x + 1) used_ext name
 
   let lookup_type used_ext name =
-    if is_primitive name then
-      Basic name
-    else
-      Ref (lookup_type_id used_ext name)
+    match Prim.of_string name with
+    | Some p -> Prim p
+    | None   -> Ref (lookup_type_id used_ext name)
 
 
   (* *)
@@ -392,7 +406,7 @@ module Pass_1 = struct
 
   let resolve_type ext : P.declaration_p0 -> declaration_p1 = function
     | `X_id id ->
-      `Alias (id, Basic "XID")
+      `Alias (id, Prim Prim.Xid)
 
     | `Type_alias (name, t) ->
       let t = Cache.lookup_type ext t in

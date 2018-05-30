@@ -236,6 +236,18 @@ end
 module Pass_1 = struct
   module P = Pass_0
 
+  type expression =
+    [ `Binop of X.binop * expression * expression
+    | `Unop of X.unop * expression
+    | `Field_ref of string
+    | `Param_ref of string * x_type
+    | `Enum_ref of string * string
+    | `Sum_of of string * expression option
+    | `Current_ref
+    | `Pop_count of expression
+    | `Value of int
+    | `Bit of int ]
+
   (* Struct fields *)
   type field_type =
     { typ  : x_type
@@ -244,7 +256,7 @@ module Pass_1 = struct
   type static_field =
     [ `Pad of X.padding
     | `Field of string * field_type
-    | `List of string * field_type * X.expression
+    | `List of string * field_type * expression
     | `File_descriptor of string ]
 
   type dynamic_field =
@@ -253,16 +265,20 @@ module Pass_1 = struct
 
   type request_field =
     [ dynamic_field
-    | `Expr of string * field_type * X.expression ]
+    | `Expr of string * field_type * expression ]
 
+
+  type cond =
+    [ `Bit_and of expression
+    | `Eq of expression ]
 
   type switch =
     { align : X.required_start_align option
-    ; cond  : X.cond
+    ; cond  : cond
     ; cases : case list }
 
   and case =
-    { exprs   : X.expression list
+    { exprs   : expression list
     ; name    : string option
     ; align_c : X.required_start_align option
     ; fields  : static_field list
@@ -327,6 +343,29 @@ module Pass_1 = struct
     | `Request of string * int * request ]
 
 
+  let rec resolve_in_expr ext : X.expression -> expression = function
+    | `Param_ref (n, t) ->
+      let t = Cache.lookup_type ext t in
+      `Param_ref (n, t)
+
+    | `Binop (op, e1, e2) ->
+      let e1 = resolve_in_expr ext e1 in
+      let e2 = resolve_in_expr ext e2 in
+      `Binop (op, e1, e2)
+    | `Unop (op, e) ->
+      let e = resolve_in_expr ext e in
+      `Unop (op, e)
+    | `Sum_of (x, e) ->
+      let e = Option.map (resolve_in_expr ext) e in
+      `Sum_of (x, e)
+    | `Pop_count e ->
+      let e = resolve_in_expr ext e in
+      `Pop_count e
+
+    | `Field_ref _ | `Enum_ref _ | `Current_ref | `Value _ | `Bit _ as e ->
+      e
+
+
   (* A bit of boilerplate for the static/dynamic/request fields *)
   let resolve_in_static_field ext : X.static_field -> static_field = function
     | `Field (name, t) ->
@@ -334,6 +373,7 @@ module Pass_1 = struct
       `Field (name, t)
     | `List (name, t, expr) ->
       let t = { enum = t.allowed; typ = Cache.lookup_type ext t.typ } in
+      let expr = resolve_in_expr ext expr in
       `List (name, t, expr)
     | `Pad _ | (`File_descriptor _) as f ->
       f
@@ -348,21 +388,32 @@ module Pass_1 = struct
   let resolve_in_request_field ext : X.request_field -> request_field = function
     | `Expr (name, t, expr) ->
       let t = { enum = t.allowed; typ = Cache.lookup_type ext t.typ } in
+      let expr = resolve_in_expr ext expr in
       `Expr (name, t, expr)
     | #X.dynamic_field as f ->
       (resolve_in_dynamic_field ext f :> request_field)
 
 
   (* Boilerplate for switch/case *)
+  let resolve_in_cond ext : X.cond -> cond = function
+    | `Bit_and expr ->
+      let expr = resolve_in_expr ext expr in
+      `Bit_and expr
+    | `Eq expr ->
+      let expr = resolve_in_expr ext expr in
+      `Eq expr
+
   let rec resolve_in_switch ext : X.switch -> switch =
     fun { align; cond; cases } ->
       let cases = List.map (resolve_in_case ext) cases in
+      let cond = resolve_in_cond ext cond in
       { align; cond; cases }
 
   and resolve_in_case ext : X.case -> case =
     fun { exprs; name; align_c; fields; switch } ->
       let fields = List.map (resolve_in_static_field ext) fields in
       let switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) switch in
+      let exprs = List.map (resolve_in_expr ext) exprs in
       { exprs; name; align_c; fields; switch }
 
 
@@ -469,7 +520,7 @@ module Pass_2 = struct
     [ `Binop of X.binop * expression * expression
     | `Unop of X.unop * expression
     | `Field_ref of string
-    | `Param_ref of string * string
+    | `Param_ref of string * x_type
     | `Enum_ref of id * string
     | `Sum_of of string * expression option
     | `Current_ref
@@ -584,7 +635,7 @@ module Pass_2 = struct
         Prim typ
 
 
-  let rec expression ext : X.expression -> expression = function
+  let rec expression ext : P.expression -> expression = function
     | `Enum_ref (enum, item) ->
       let enum = Cache.lookup_enum ext `Enum enum in
       `Enum_ref (enum, item)
@@ -631,7 +682,7 @@ module Pass_2 = struct
 
 
   (* MORE BOILERPLATE *)
-  let resolve_in_cond ext : X.cond -> cond = function
+  let resolve_in_cond ext : P.cond -> cond = function
     | `Bit_and expr ->
       let expr = expression ext expr in
       `Bit_and expr

@@ -67,16 +67,126 @@ let x_type_str = function
   | Analyzer.Ref id -> id_str id
 
 
+let field_type_str =
+  let open Analyzer.Pass_2 in function
+  | Prim t ->
+    x_type_str t
+  | Enum (e, t) ->
+    (x_type_str t) ^ " " ^ (id_str e) ^ "_enum"
+  | Mask (e, t) ->
+    (x_type_str t) ^ " " ^ (id_str e) ^ "_mask"
+  | Enum_or (e, t) ->
+    Printf.sprintf "(%s, %s %s_enum) either"
+      (x_type_str t) (x_type_str t) (id_str e)
+  | Mask_or (e, t) ->
+    Printf.sprintf "(%s, %s %s_mask) either"
+      (x_type_str t) (x_type_str t) (id_str e)
+
+
+let padding_str : Parser.padding -> string = fun { Parser.pad; serialize } ->
+  match pad with
+  | `Bytes n -> string_of_int n ^ " bytes"
+  | `Align n -> "align to " ^ string_of_int n
+
+
+let print_struct out ~indent of_item items =
+  let indent = String.make indent ' ' in
+  let rec prn = function
+    | [] -> ()
+    | hd :: tl ->
+      Printf.fprintf out "%s{ %s" indent (of_item hd);
+      tl |> List.iter (fun item ->
+        Printf.fprintf out "\n%s; %s" indent (of_item item)
+      )
+  in prn items
+
+
+let binop_str : Parser.binop -> string = function
+  | `Add -> "( + )"
+  | `Sub -> "( - )"
+  | `Mul -> "( * )"
+  | `Div -> "( / )"
+  | `Bit_and -> "( land )"
+  | `Bit_left_shift -> "( lsl )"
+
+let unop_str : Parser.unop -> string = function
+  | `Bit_not -> "lnot"
+
+
+let rec expression_str : Analyzer.Pass_2.expression -> string =
+  let p fmt = Printf.sprintf fmt in
+  function
+  | `Binop (op, e1, e2) ->
+    p "%s (%s) (%s)" (binop_str op) (expression_str e1) (expression_str e2)
+  | `Unop (op, e) ->
+    p "%s (%s)" (unop_str op) (expression_str e)
+  | `Field_ref n ->
+    snake_cased n
+  | `Param_ref (n, _) ->
+    snake_cased n
+  | `Enum_ref (en, i) ->
+    "`" ^ i
+  | `Sum_of (f, e) ->
+    begin match e with
+    | None ->
+      p "List.fold_left ( + ) 0 %s" f
+    | Some e ->
+      p "List.fold_left (fun acc curr' -> acc + (%s)) 0 %s" (expression_str e) (snake_cased f)
+    end
+  | `Current_ref ->
+    "curr'"
+  | `Pop_count expr ->
+    p "pop_count (%s)" (expression_str expr)
+  | `Value n ->
+    string_of_int n
+  | `Bit n ->
+    string_of_int (1 lsl n)
+
+
+let static_field_str = function
+  | `Pad p ->
+    Printf.sprintf "(* pad: %s *)" (padding_str p)
+  | `Field (n, t) ->
+    Printf.sprintf "%s : %s;" (snake_cased n) (field_type_str t)
+  | `List (n, t, l) ->
+    Printf.sprintf "%s : %s array; (* length: %s *)"
+      (snake_cased n) (field_type_str t) (expression_str l)
+  | `File_descriptor n ->
+    Printf.sprintf "%s : file_descriptor;" (snake_cased n)
+
+
+let print_static_field out ~indent =
+  print_struct out ~indent (function
+    | `Pad p ->
+      Printf.sprintf "(* pad: %s *)" (padding_str p)
+    | `Field (n, t) ->
+      Printf.sprintf "%s : %s;" (snake_cased n) (field_type_str t)
+    | `List (n, t, l) ->
+      Printf.sprintf "%s : %s array; (* length: %s *)"
+        (snake_cased n) (field_type_str t) (expression_str l)
+    | `File_descriptor n ->
+      Printf.sprintf "%s : file_descriptor;" (snake_cased n)
+  )
+
+
 (* To be usable these extensions certainly need some more work; maybe we should
    define a thin wrapper and not do any complex usage tracking stuff here e.g.
    deciding whether types should be opaque and so on. *)
 
 let generate out (ext : Analyzer.Pass_2.extension_p2) =
-  let o fmt = Printf.fprintf out fmt in
+  (* let fo fmt = Printf.fprintf out fmt in *)
+  let fe fmt = Printf.fprintf out (fmt ^^ "\n") in
+  let ps = output_string out in
+  let pe s = output_string out s; output_char out '\n' in
+  let pn () = output_char out '\n' in
+  pe "(*****************************************************************************)";
+  fe "(* %s *)" ext.name;
+  pe "(*****************************************************************************)";
   ext.version |> Option.iter (fun (maj, min) ->
-    o "let version = (%d, %d)\n" maj min);
+    fe "let version = (%d, %d)" maj min);
   ext.query_name |> Option.iter (fun n ->
-    o "let query_extension_name = %S\n" n);
+    fe "let query_extension_name = %S" n);
+  pn ();
   ext.declarations |> List.iter begin function
     | `Alias (n, t) ->
       (* Should the types be opaque?
@@ -84,14 +194,14 @@ let generate out (ext : Analyzer.Pass_2.extension_p2) =
         Do we have to track usage to know whether they should ever be supplied
         by the users or can we get by just using the enums?
       *)
-      o "type %s = %s\n" (snake_cased n) (x_type_str t)
+      fe "type %s = %s" (snake_cased n) (x_type_str t)
 
     | `X_id_union (n, _) ->
       (* XID unions are hardly used in the codebase, and outputting a variant
          type rather than simply aliasing them to XIDs would be way more
          trouble than it's worth. This might change in the future, but for now
          it's good enough. *)
-      o "type %s = xid\n" (snake_cased n)
+      fe "type %s = xid" (snake_cased n)
 
     | `Enum (name, items) ->
       (* We need to know a few things here:
@@ -102,6 +212,38 @@ let generate out (ext : Analyzer.Pass_2.extension_p2) =
           functions)
       *)
       ()
+
+    | `Struct (name, s) ->
+      fe "type %s = {" (snake_cased name);
+      let s : Analyzer.Pass_2.struct_fields = s in
+      s.fields |> List.iter (fun x ->
+        fe "  %s" (static_field_str x)
+      );
+      begin match s.switch with
+      | None ->
+        fe "}"
+      | Some (name, sw) ->
+        fe "  %s : 'a\n}" name;
+        fe "SWITCH %s ->" name;
+        begin match sw.cond with
+        | `Bit_and e ->
+          let e = expression_str e in
+          fe "  let cond x' = (%s) land x' != 0 in" e
+        | `Eq e ->
+          let e = expression_str e in
+          fe "  let cond x' = (%s) = x' in" e
+        end;
+        ps "  ";
+        sw.cases |> List.iter (
+          fun Analyzer.Pass_2.{ exprs; name; fields; switch; _ } ->
+            fe "if %s then" (String.concat " || " (List.map (fun x -> "cond " ^ expression_str x) exprs));
+            Option.iter (fun n -> fe "    (* name: %s *)" n) name;
+            print_static_field out ~indent:4 fields;
+            ps " }\n";
+            ps "  else "
+        );
+        ps "()\n"
+      end
 
     | _ ->
       ()
@@ -119,4 +261,5 @@ let%test_unit "analyzer test" =
   in
   let exts = List.map load_extension files in
   let exts = Analyzer.analyze_extensions exts in
-  List.iter (generate stdout) exts
+  let out = open_out "stuffs.ml" in
+  List.iter (generate out) exts

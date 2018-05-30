@@ -138,7 +138,7 @@ type expression =
   | `Param_ref of string * string
     (** The value of a field in a structure that contains the current one.
        (name, type) *)
-  | `Enum_ref  of string * string
+  | `Enum_ref of string * string
     (** The value of an identifier in an enum. (enum, item) *)
   | `Sum_of of string * expression option
     (** Sum of the elements in a list field. The expression, if present,
@@ -212,12 +212,11 @@ type switch =
 (** Essentially an if statement which uses an operation that takes the
    switch expression and the case expression, and includes the fields it
    contains in the switch if it's true.
-   If there are multiple expressions, they should be chained with ORs. *)
+   If there are multiple expressions, they should be chained with boolean or. *)
 and case =
   { exprs   : expression list
   ; name    : string option
-  (* Why would a case expression ever need a goddamn name?
-     What is it for? XInput only knows. *)
+  (* We could use the name to output the record types for the fields, probably. *)
   ; align_c : required_start_align option
   ; fields  : static_field list
   ; switch  : (string * switch) option }

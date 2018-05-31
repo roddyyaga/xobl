@@ -37,6 +37,10 @@ let snake_cased name =
     Buffer.contents buf
 
 
+let caml_cased name =
+  String.capitalize_ascii (snake_cased name)
+
+
 let id_str = function
   | Analyzer.Id n -> snake_cased n
   | Analyzer.Ext_id (e, n) ->
@@ -125,7 +129,7 @@ let rec expression_str : Analyzer.Pass_2.expression -> string =
   | `Param_ref (n, _) ->
     snake_cased n
   | `Enum_ref (en, i) ->
-    "`" ^ i
+    "`" ^ (caml_cased i)
   | `Sum_of (f, e) ->
     begin match e with
     | None ->
@@ -180,7 +184,7 @@ let generate out (ext : Analyzer.Pass_2.extension_p2) =
   let pe s = output_string out s; output_char out '\n' in
   let pn () = output_char out '\n' in
   pe "(*****************************************************************************)";
-  fe "(* %s *)" ext.name;
+  fe "module %s = struct" (String.capitalize_ascii ext.name);
   pe "(*****************************************************************************)";
   ext.version |> Option.iter (fun (maj, min) ->
     fe "let version = (%d, %d)" maj min);
@@ -239,15 +243,19 @@ let generate out (ext : Analyzer.Pass_2.extension_p2) =
             fe "if %s then" (String.concat " || " (List.map (fun x -> "cond " ^ expression_str x) exprs));
             Option.iter (fun n -> fe "    (* name: %s *)" n) name;
             print_static_field out ~indent:4 fields;
-            ps " }\n";
+            pe " }";
+            switch |> Option.iter (fun (name, _) ->
+              fe "(* WARNING NESTED SWITCH: %s *)" name);
             ps "  else "
         );
-        ps "()\n"
+        pe "()";
       end
 
     | _ ->
       ()
-  end
+  end;
+  pe "end";
+  pn ()
 
 
 

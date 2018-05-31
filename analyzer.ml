@@ -779,6 +779,26 @@ end
 
 
 
+(*
+We should probably fold switches into sum types when we can.
+How do we infer this? Are there any cases where that's not possible?
+
+In structs we can do this pretty easily, because the expression they switch
+on is just a simple enum, so we can turn that enum into a variant type with
+each variant assigned to the fields it holds.
+
+Note that we also need to retain the wire representation of the struct.
+Maybe the struct declaration should look like this:
+
+  `Struct of <name> * <type repr> * <wire repr>
+
+Of course this would come at the cost of having to keep the two in sync, so
+perhaps it'd be better to do all processing on the type representation *after*
+we're done processing the wire representation stuff.
+*)
+
+
+
 let analyze_extensions exts =
   let exts = List.map Pass_0.lift_imports exts in
   Cache.init exts;

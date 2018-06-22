@@ -177,10 +177,15 @@ let print_static_field out ~indent =
    define a thin wrapper and not do any complex usage tracking stuff here e.g.
    deciding whether types should be opaque and so on. *)
 
-let generate out (ext : Analyzer.Pass_2.extension_p2) =
+(* Reminder to mangle the names in a predictable way so that we don't
+   accidentally use a reserved word in OCaml (e.g. type). *)
+
+let generate out (ext : Analyzer.Pass_3.extension_p3) =
   (* let fo fmt = Printf.fprintf out fmt in *)
   let fe fmt = Printf.fprintf out (fmt ^^ "\n") in
+  (*
   let ps = output_string out in
+*)
   let pe s = output_string out s; output_char out '\n' in
   let pn () = output_char out '\n' in
   pe "(*****************************************************************************)";
@@ -217,6 +222,7 @@ let generate out (ext : Analyzer.Pass_2.extension_p2) =
       *)
       ()
 
+      (*
     | `Struct (name, s) ->
       fe "type %s = {" (snake_cased name);
       let s : Analyzer.Pass_2.struct_fields = s in
@@ -245,11 +251,12 @@ let generate out (ext : Analyzer.Pass_2.extension_p2) =
             print_static_field out ~indent:4 fields;
             pe " }";
             switch |> Option.iter (fun (name, _) ->
-              fe "(* WARNING NESTED SWITCH: %s *)" name);
+              fe "(* WARNING NESTED SWITCH IN STRUCT: %s *)" name);
             ps "  else "
         );
         pe "()";
       end
+  *)
 
     | _ ->
       ()

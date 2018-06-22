@@ -779,6 +779,96 @@ end
 
 
 
+(** In which we assert that switches in structs can do way less than others. *)
+module Pass_3 = struct
+  module P = Pass_2
+
+  type struct_case =
+    { sc_constr : id * string (** Type and name of the constructor *)
+    ; sc_name   : string option
+    ; sc_align  : X.required_start_align option
+    ; sc_fields : P.static_field list }
+
+  type struct_field =
+    [ P.static_field
+    | `Switch_expr of string * P.field_type * string
+    | `Switch_body of string * struct_case list * X.required_start_align option ]
+
+  type common_p2_p3 =
+    [ `Alias of string * x_type
+    | `X_id_union of string * id list
+
+    | `Enum of string * X.enum
+
+    | `Event_struct of string * X.allowed_events list
+
+    | `Event_alias of string * int * string
+    | `Error_alias of string * int * string
+
+    | `Union of string * P.static_field list
+
+    | `Event of string * int * P.event
+    | `Generic_event of string * int * P.generic_event
+    | `Error of string * int * P.error
+
+    | `Request of string * int * P.request ]
+
+  type declaration_p3 =
+    [ common_p2_p3
+    | `Struct of string * struct_field list ]
+
+
+  let conv_fields : P.struct_fields -> struct_field list = function
+    | { fields; switch = None } ->
+      (fields :> struct_field list)
+
+    | { fields; switch = Some (sw_name, switch) } ->
+      let expr_field = match switch.cond with
+        | `Eq (`Field_ref f) -> f
+        | _ -> assert false
+      in
+      let fields = fields |>
+        List.rev_map (function
+          | `Field (name, typ) when name = expr_field ->
+            `Switch_expr (name, typ, sw_name)
+
+          | #P.static_field as f -> f
+        )
+      in
+      let switch_body = switch.cases |>
+        List.map (fun (case : P.case) ->
+          let sc_constr = match case.exprs with
+            | [ `Enum_ref (enum, item) ] -> (enum, item)
+            | _ -> assert false
+          in
+          let sc_name   = case.name in
+          let sc_align  = case.align_c in
+          let sc_fields = case.fields in
+          assert (case.switch = None);
+          { sc_constr; sc_name; sc_align; sc_fields }
+        )
+      in
+      List.rev @@ `Switch_body (sw_name, switch_body, switch.align) :: fields
+
+
+  let conv_declaration curr_ext : P.declaration_p2 -> declaration_p3 = function
+    | `Struct (name, fields) ->
+      let fields = conv_fields fields in
+      `Struct (name, fields)
+
+    | #common_p2_p3 as d ->
+      d
+
+
+  type extension_p3 = declaration_p3 extension
+
+  let conv_structs (ext : P.extension_p2) : extension_p3 =
+    let declarations = List.map (conv_declaration ext) ext.declarations in
+    { ext with declarations }
+end
+
+
+
 (*
 We should probably fold switches into sum types when we can.
 How do we infer this? Are there any cases where that's not possible?
@@ -788,13 +878,18 @@ on is just a simple enum, so we can turn that enum into a variant type with
 each variant assigned to the fields it holds.
 
 Note that we also need to retain the wire representation of the struct.
-Maybe the struct declaration should look like this:
+The field with the flag and its type should be retained somehow.
 
-  `Struct of <name> * <type repr> * <wire repr>
+  Maybe the struct declaration should look like this:
 
-Of course this would come at the cost of having to keep the two in sync, so
-perhaps it'd be better to do all processing on the type representation *after*
-we're done processing the wire representation stuff.
+    `Struct of <name> * <type repr> * <wire repr>
+
+  Of course this would come at the cost of having to keep the two in sync, so
+  perhaps it'd be better to do all processing on the type representation *after*
+  we're done processing the wire representation stuff.
+
+This doesn't look that great an idea ^
+
 *)
 
 
@@ -806,4 +901,5 @@ let analyze_extensions exts =
     fun ext -> ext
     |> Pass_1.resolve_types
     |> Pass_2.resolve_enums
+    |> Pass_3.conv_structs
   )

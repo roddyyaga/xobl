@@ -23,7 +23,7 @@ languages may easily be plugged in.
 ## X documentation
 * https://www.x.org/releases/X11R7.7/doc/
 * https://www.x.org/wiki/Development/
-* Many of the reasons behind decisions in the XCB protocol spec were documented in the commit messages on https://cgit.freedesktop.org/xorg/proto/xproto/
+* Many of the reasons behind decisions in the XCB protocol spec were documented in the commit messages on https://cgit.freedesktop.org/xcb/proto/log/
 
 ## Porting Xlib applications to XCB
 * [Martin Gräßlin: KWin went XCB](https://www.youtube.com/watch?v=_U0guRQrlMA)

@@ -1,6 +1,3 @@
-open Util
-
-
 let resolve_extension_path name =
   Filename.concat "xproto/src" (name ^ ".xml")
 
@@ -87,7 +84,7 @@ let field_type_str =
       (x_type_str t) (x_type_str t) (id_str e)
 
 
-let padding_str : Parser.padding -> string = fun { Parser.pad; serialize } ->
+let padding_str : Parser.padding -> string = fun { Parser.pad; serialize = _ } ->
   match pad with
   | `Bytes n -> string_of_int n ^ " bytes"
   | `Align n -> "align to " ^ string_of_int n
@@ -95,7 +92,7 @@ let padding_str : Parser.padding -> string = fun { Parser.pad; serialize } ->
 
 let print_struct out ~indent of_item items =
   let indent = String.make indent ' ' in
-  let rec prn = function
+  let prn = function
     | [] -> ()
     | hd :: tl ->
       Printf.fprintf out "%s{ %s" indent (of_item hd);
@@ -128,7 +125,7 @@ let rec expression_str : Analyzer.Pass_2.expression -> string =
     snake_cased n
   | `Param_ref (n, _) ->
     snake_cased n
-  | `Enum_ref (en, i) ->
+  | `Enum_ref (_en, i) ->
     "`" ^ (caml_cased i)
   | `Sum_of (f, e) ->
     begin match e with
@@ -212,7 +209,7 @@ let generate out (ext : Analyzer.Pass_3.extension_p3) =
          it's good enough. *)
       fe "type %s = xid" (snake_cased n)
 
-    | `Enum (name, items) ->
+    | `Enum (_name, _items) ->
       (* We need to know a few things here:
         - output an enumeration? a bitmask? both? (solved, sort of)
         - which types do we need conversion functions to and from for?

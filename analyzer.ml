@@ -851,7 +851,7 @@ module Pass_3 = struct
       List.rev @@ `Switch_body (sw_name, switch_body, switch.align) :: fields
 
 
-  let conv_declaration curr_ext : P.declaration_p2 -> declaration_p3 = function
+  let conv_declaration _curr_ext : P.declaration_p2 -> declaration_p3 = function
     | `Struct (name, fields) ->
       let fields = conv_fields fields in
       `Struct (name, fields)
@@ -866,6 +866,37 @@ module Pass_3 = struct
     let declarations = List.map (conv_declaration ext) ext.declarations in
     { ext with declarations }
 end
+
+
+(*
+module Pass_3 = struct
+  type common_p2_p3 =
+    [ `Alias of string * x_type
+    | `X_id_union of string * id list
+
+    | `Enum of string * X.enum
+
+    | `Event_struct of string * X.allowed_events list
+
+    | `Event_alias of string * int * string
+    | `Error_alias of string * int * string
+
+    | `Union of string * static_field list
+
+    | `Event of string * int * event
+    | `Generic_event of string * int * generic_event
+    | `Error of string * int * error
+
+    | `Request of string * int * request ]
+
+  type declaration_p3 =
+    [ `Struct of string * struct_fields
+    | `Variant of name * variant ]
+
+
+
+end
+*)
 
 
 

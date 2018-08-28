@@ -1,29 +1,59 @@
 open Util
 
-(* The "_o" suffix represents an attribute that may not be present  *)
 
-let str_attr attrs x =
+module Attr = struct
+  (* The "_o" suffix represents an attribute that may not be present  *)
+
+  let str attrs x =
+    List.assoc x attrs
+
+  let str_o attrs x =
+    List.assoc_opt x attrs
+
+  let int attrs x =
+    str attrs x |> int_of_string
+
+  let int_o attrs x =
+    str_o attrs x
+    |> Option.map int_of_string
+
+  let bool_o attrs x =
+    str_o attrs x
+    |> Option.map bool_of_string
+
+  (* Attributes that are false by default *)
+  let bool_f attrs x =
+    bool_o attrs x
+    |> Option.with_default false
+
+  (* Attributes that are true by default *)
+  let bool_t attrs x =
+    bool_o attrs x
+    |> Option.with_default true
+end
+
+(*
+let Attr.str attrs x =
   List.assoc x attrs
 
-let str_attr_o attrs x =
+let Attr.str_o attrs x =
   List.assoc_opt x attrs
 
-let int_attr attrs x =
-  str_attr attrs x |> int_of_string
+let Attr.int attrs x =
+  Attr.str attrs x |> int_of_string
 
-let int_attr_o attrs x =
-  str_attr_o attrs x
+let Attr.int_o attrs x =
+  Attr.str_o attrs x
   |> Option.map int_of_string
 
-(* Attributes that are false by default *)
-let bool_attr_f attrs x =
-  str_attr_o attrs x
+let Attr.bool_f attrs x =
+  Attr.str_o attrs x
   |> Option.map bool_of_string |> Option.with_default false
 
-(* Attributes that are true by default *)
-let bool_attr_t attrs x =
-  str_attr_o attrs x
+let Attr.bool_t attrs x =
+  Attr.str_o attrs x
   |> Option.map bool_of_string |> Option.with_default true
+*)
 
 
 type xml_el = string * (string * string) list * Xml.xml list
@@ -49,10 +79,10 @@ type padding =
 
 
 let pad_of_xml attrs : padding =
-  let serialize = bool_attr_f attrs "serialize" in
+  let serialize = Attr.bool_f attrs "serialize" in
   let pad =
-    try       `Bytes (int_attr attrs "bytes")
-    with _ -> `Align (int_attr attrs "align") in
+    try       `Bytes (Attr.int attrs "bytes")
+    with _ -> `Align (Attr.int attrs "align") in
   { pad; serialize }
 
 
@@ -62,8 +92,8 @@ type required_start_align =
 
 
 let required_start_align_of_xml attrs =
-  let align = int_attr attrs "align" in
-  let offset = int_attr_o attrs "offset" in
+  let align = Attr.int attrs "align" in
+  let offset = Attr.int_o attrs "offset" in
   { align; offset }
 
 
@@ -79,7 +109,7 @@ let consume_align = function
 (* ********** Documentation ********** *)
 type doc = unit
 
-let consume_doc =
+let consume_doc : Xml.xml list -> doc option * Xml.xml list =
   List'.extract (function
     | Xml.Element ("doc", _, _) -> Some ()
     | _ -> None
@@ -115,14 +145,14 @@ let enum_of_xml items =
     | Element ("item", ["name", name], [Element ("bit",   [], [PCData v])]) :: rest ->
       let bits = (name, int_of_string v) :: bits in
       parse_items (vals, bits) rest
-    | Element ("doc", [], doc) :: [] ->
+    | Element ("doc", [], _doc) :: [] ->
       vals, bits, Some ()
     | Element ("doc", _, _) :: _ ->
       fail_unexpected "invalid enum: doc item not in tail position"
     | _ ->
       fail_unexpected "invalid enum element"
   in
-  let vals, bits, doc = parse_items ([], []) items in
+  let vals, bits, _doc = parse_items ([], []) items in
   let vals, bits = List.rev vals, List.rev bits in
   { vals; bits }
 
@@ -217,16 +247,16 @@ type field_type =
 
 
 let field_of_xml attrs : string * field_type =
-  let name = str_attr attrs "name" in
-  let typ  = str_attr attrs "type" in
+  let name = Attr.str attrs "name" in
+  let typ  = Attr.str attrs "type" in
   let allowed =
-    match str_attr_o attrs "enum" with
+    match Attr.str_o attrs "enum" with
     | Some x -> Some (`Enum x) | None ->
-    match str_attr_o attrs "mask" with
+    match Attr.str_o attrs "mask" with
     | Some x -> Some (`Mask x) | None ->
-    match str_attr_o attrs "altenum" with
+    match Attr.str_o attrs "altenum" with
     | Some x -> Some (`Alt_enum x) | None ->
-    match str_attr_o attrs "altmask" with
+    match Attr.str_o attrs "altmask" with
     | Some x -> Some (`Alt_mask x) | None -> None
   in
   name, { typ; allowed }
@@ -295,9 +325,11 @@ let request_field_of_xml_el : xml_el -> request_field = function
     (dynamic_field_of_xml_el other :> request_field)
 
 
+    (*
 let request_field_of_xml = function
   | Xml.PCData _ -> fail_unexpected "invalid element in request field"
   | Xml.Element el -> request_field_of_xml_el el
+  *)
 
 
 
@@ -418,9 +450,9 @@ type allowed_events =
 
 let allowed_events_of_xml : Xml.xml -> allowed_events = function
   | Xml.Element ("allowed", attrs, []) ->
-    let extension = str_attr attrs "extension" in
-    let opcode_min = int_attr attrs "opcode-min" in
-    let opcode_max = int_attr attrs "opcode-max" in
+    let extension = Attr.str attrs "extension" in
+    let opcode_min = Attr.int attrs "opcode-min" in
+    let opcode_max = Attr.int attrs "opcode-max" in
     { extension; opcode_range = (opcode_min, opcode_max) }
   | _ ->
     fail_unexpected "invalid element in event struct"
@@ -455,7 +487,7 @@ type request =
 
 let reply_of_xml fields : reply =
   let align, fields  = consume_align fields in
-  let doc, fields    = consume_doc fields in
+  let _doc, fields   = consume_doc fields in
   let switch, fields = consume_switch fields in
   let fields = List.map dynamic_field_of_xml fields in
   { align; fields; switch }
@@ -463,7 +495,7 @@ let reply_of_xml fields : reply =
 
 let request_of_xml fields : request_fields * reply option =
   let align, fields  = consume_align fields in
-  let doc, fields    = consume_doc fields in
+  let _doc, fields   = consume_doc fields in
   let switch, fields = consume_switch fields in
   let rec parse_params acc = function
     | [] ->
@@ -528,12 +560,12 @@ let declaration_of_xml : Xml.xml -> declaration =
     `Type_alias (new_name, old_name)
 
   | "event", attrs, fields ->
-    let is_generic = bool_attr_f attrs "xge" in
-    let name = str_attr attrs "name" in
-    let code = int_attr attrs "number" in
-    let no_sequence_number = bool_attr_f attrs "no-sequence-number" in
+    let is_generic = Attr.bool_f attrs "xge" in
+    let name = Attr.str attrs "name" in
+    let code = Attr.int attrs "number" in
+    let no_sequence_number = Attr.bool_f attrs "no-sequence-number" in
     let align, fields = consume_align fields in
-    let doc, fields = consume_doc fields in
+    let _doc, fields = consume_doc fields in
     if is_generic then
       let fields = List.map dynamic_field_of_xml fields in
       `Generic_event (name, code, { no_sequence_number; align; fields })
@@ -546,22 +578,22 @@ let declaration_of_xml : Xml.xml -> declaration =
     `Event_struct (name, allowed)
 
   | "eventcopy", attrs, [] ->
-    let new_name = str_attr attrs "name" in
-    let old_name = str_attr attrs "ref" in
-    let number   = int_attr attrs "number" in
+    let new_name = Attr.str attrs "name" in
+    let old_name = Attr.str attrs "ref" in
+    let number   = Attr.int attrs "number" in
     `Event_alias (new_name, number, old_name)
 
   | "error", attrs, fields ->
-    let name = str_attr attrs "name" in
-    let code = int_attr attrs "number" in
+    let name = Attr.str attrs "name" in
+    let code = Attr.int attrs "number" in
     let align, fields = consume_align fields in
     let fields = List.map static_field_of_xml fields in
     `Error (name, code, { align; fields })
 
   | "errorcopy", attrs, [] ->
-    let new_name = str_attr attrs "name" in
-    let old_name = str_attr attrs "ref" in
-    let number   = int_attr attrs "number" in
+    let new_name = Attr.str attrs "name" in
+    let old_name = Attr.str attrs "ref" in
+    let number   = Attr.int attrs "number" in
     `Error_alias (new_name, number, old_name)
 
   | "union", ["name", name], fields ->
@@ -574,9 +606,9 @@ let declaration_of_xml : Xml.xml -> declaration =
     `Struct (name, { fields; switch })
 
   | "request", attrs, fields ->
-    let name = str_attr attrs "name" in
-    let opcode = int_attr attrs "opcode" in
-    let combine_adjacent = bool_attr_t attrs "combine-adjacent" in
+    let name = Attr.str attrs "name" in
+    let opcode = Attr.int attrs "opcode" in
+    let combine_adjacent = Attr.bool_t attrs "combine-adjacent" in
     let params, reply = request_of_xml fields in
     `Request (name, opcode, { combine_adjacent; params; reply })
 
@@ -606,13 +638,13 @@ let parse_file fname : protocol_file =
     Core (List.map declaration_of_xml decls)
 
   | Xml.Element ("xcb", attrs, decls) ->
-    let name       = str_attr attrs "extension-name" in
-    let file_name  = str_attr attrs "header" in
-    let query_name = str_attr attrs "extension-xname" in
-    let multiword  = bool_attr_f attrs "extension_multiword" in
+    let name       = Attr.str attrs "extension-name" in
+    let file_name  = Attr.str attrs "header" in
+    let query_name = Attr.str attrs "extension-xname" in
+    let multiword  = Attr.bool_f attrs "extension_multiword" in
     let version =
-      let major = int_attr attrs "major-version" in
-      let minor = int_attr attrs "minor-version" in
+      let major = Attr.int attrs "major-version" in
+      let minor = Attr.int attrs "minor-version" in
       major, minor in
     let decls = List.map declaration_of_xml decls in
     let info = { name; file_name; query_name; multiword; version } in

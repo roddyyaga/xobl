@@ -13,5 +13,5 @@ remove:  [[ "jbuilder" "uninstall" "-p" name ]]
 
 depends: [
   "jbuilder" {build}
-  "xml-light"
+  "xmlm"
 ]

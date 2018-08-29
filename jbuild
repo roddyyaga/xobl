@@ -3,7 +3,7 @@
 (library
  ((name xobl_compiler)
   (public_name xobl.internals)
-  (libraries (xml-light unix))
+  (libraries (unix xmlm))
   (inline_tests
    ((deps ((glob_files xproto/src/*.xml)))))
   (preprocess (pps (ppx_inline_test)))))

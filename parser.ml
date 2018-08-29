@@ -32,31 +32,32 @@ module Attr = struct
     |> Option.with_default true
 end
 
-(*
-let Attr.str attrs x =
-  List.assoc x attrs
 
-let Attr.str_o attrs x =
-  List.assoc_opt x attrs
+module Xml = struct
+  type attr = string * string
 
-let Attr.int attrs x =
-  Attr.str attrs x |> int_of_string
+  type el =
+    string * attr list * t list
 
-let Attr.int_o attrs x =
-  Attr.str_o attrs x
-  |> Option.map int_of_string
+  and t =
+    | E of el
+    | D of string
 
-let Attr.bool_f attrs x =
-  Attr.str_o attrs x
-  |> Option.map bool_of_string |> Option.with_default false
-
-let Attr.bool_t attrs x =
-  Attr.str_o attrs x
-  |> Option.map bool_of_string |> Option.with_default true
-*)
-
-
-type xml_el = string * (string * string) list * Xml.xml list
+  let parse_file fname =
+    let inp = open_in fname in
+    try
+      let xml_inp = Xmlm.make_input ~strip:true (`Channel inp) in
+      let el ((_, name), attrs) childs =
+        E (name, (List.map (fun ((_, n), v) -> (n, v)) attrs), childs)
+      in
+      let data str = D str in
+      let (_, x) = Xmlm.input_doc_tree ~el ~data xml_inp in
+      close_in inp;
+      x
+    with exn ->
+      close_in inp;
+      raise exn
+end
 
 
 exception Unexpected of string
@@ -82,7 +83,8 @@ let pad_of_xml attrs : padding =
   let serialize = Attr.bool_f attrs "serialize" in
   let pad =
     try       `Bytes (Attr.int attrs "bytes")
-    with _ -> `Align (Attr.int attrs "align") in
+    with _ -> `Align (Attr.int attrs "align")
+  in
   { pad; serialize }
 
 
@@ -92,13 +94,13 @@ type required_start_align =
 
 
 let required_start_align_of_xml attrs =
-  let align = Attr.int attrs "align" in
+  let align  = Attr.int attrs "align" in
   let offset = Attr.int_o attrs "offset" in
   { align; offset }
 
 
 let consume_align = function
-  | Xml.Element ("required_start_align", align, []) :: rest ->
+  | Xml.E ("required_start_align", align, []) :: rest ->
     let align = required_start_align_of_xml align in
     Some align, rest
   | children ->
@@ -109,9 +111,9 @@ let consume_align = function
 (* ********** Documentation ********** *)
 type doc = unit
 
-let consume_doc : Xml.xml list -> doc option * Xml.xml list =
+let consume_doc : Xml.t list -> doc option * Xml.t list =
   List'.extract (function
-    | Xml.Element ("doc", _, _) -> Some ()
+    | Xml.E ("doc", _, _) -> Some ()
     | _ -> None
   )
 
@@ -119,7 +121,7 @@ let consume_doc : Xml.xml list -> doc option * Xml.xml list =
 
 (* ********** XID union ********** *)
 let xid_union_of_xml = function
-  | Xml.Element ("type", [], [Xml.PCData name]) -> name
+  | Xml.E ("type", [], [Xml.D name]) -> name
   | _ -> fail_unexpected "invalid element in xidunion"
 
 
@@ -139,16 +141,21 @@ let enum_of_xml items =
   let rec parse_items (vals, bits) = function
     | [] ->
       vals, bits, None
-    | Element ("item", ["name", name], [Element ("value", [], [PCData v])]) :: rest ->
+
+    | E ("item", ["name", name], [E ("value", [], [D v])]) :: rest ->
       let vals = (name, Int64.of_string v) :: vals in
       parse_items (vals, bits) rest
-    | Element ("item", ["name", name], [Element ("bit",   [], [PCData v])]) :: rest ->
+
+    | E ("item", ["name", name], [E ("bit",   [], [D v])]) :: rest ->
       let bits = (name, int_of_string v) :: bits in
       parse_items (vals, bits) rest
-    | Element ("doc", [], _doc) :: [] ->
+
+    | E ("doc", [], _doc) :: [] ->
       vals, bits, Some ()
-    | Element ("doc", _, _) :: _ ->
+
+    | E ("doc", _, _) :: _ ->
       fail_unexpected "invalid enum: doc item not in tail position"
+
     | _ ->
       fail_unexpected "invalid enum element"
   in
@@ -168,8 +175,8 @@ let binop : string -> binop = function
   | "-" -> `Sub
   | "*" -> `Mul
   | "/" -> `Div
-  | "&amp;" -> `Bit_and
-  | "&lt;&lt;" -> `Bit_left_shift
+  | "&" -> `Bit_and
+  | "<<" -> `Bit_left_shift
   | o -> fail_unexpectedf "invalid binary operation: %s" o
 
 
@@ -194,39 +201,39 @@ type expression =
   | `Bit of int ]
 
 
-let rec expression_of_xml : xml_el -> expression =
+let rec expression_of_xml : Xml.el -> expression =
   let open Xml in function
-  | "op", ["op", op], [Element op1; Element op2] ->
+  | "op", ["op", op], [E op1; E op2] ->
     `Binop (binop op, expression_of_xml op1, expression_of_xml op2)
 
-  | "unop", ["op", op], [Element op1] ->
+  | "unop", ["op", op], [E op1] ->
     `Unop (unop op, expression_of_xml op1)
 
-  | "fieldref", [], [PCData ref] ->
+  | "fieldref", [], [D ref] ->
     `Field_ref ref
 
-  | "paramref", ["type", typ], [PCData ref] ->
+  | "paramref", ["type", typ], [D ref] ->
     `Param_ref (ref, typ)
 
-  | "enumref", ["ref", enum], [PCData id] ->
+  | "enumref", ["ref", enum], [D id] ->
     `Enum_ref (enum, id)
 
-  | "popcount", [], [Element expr] ->
+  | "popcount", [], [E expr] ->
     `Pop_count (expression_of_xml expr)
 
   | "sumof", ["ref", ref], [] ->
     `Sum_of (ref, None)
 
-  | "sumof", ["ref", ref], [Element expr] ->
+  | "sumof", ["ref", ref], [E expr] ->
     `Sum_of (ref, Some (expression_of_xml expr))
 
   | "listelement-ref", [], [] ->
     `Current_ref
 
-  | "value", [], [PCData v] ->
+  | "value", [], [D v] ->
     `Value (int_of_string v)
 
-  | "bit", [], [PCData v] ->
+  | "bit", [], [D v] ->
     `Bit (int_of_string v)
 
   | n, _, _ ->
@@ -246,18 +253,18 @@ type field_type =
   ; allowed : allowed_vals option }
 
 
-let field_of_xml attrs : string * field_type =
+let field_of_attrs attrs : string * field_type =
   let name = Attr.str attrs "name" in
   let typ  = Attr.str attrs "type" in
   let allowed =
-    match Attr.str_o attrs "enum" with
-    | Some x -> Some (`Enum x) | None ->
-    match Attr.str_o attrs "mask" with
-    | Some x -> Some (`Mask x) | None ->
-    match Attr.str_o attrs "altenum" with
-    | Some x -> Some (`Alt_enum x) | None ->
-    match Attr.str_o attrs "altmask" with
-    | Some x -> Some (`Alt_mask x) | None -> None
+    match Attr.str_o attrs "enum"
+    with Some x -> Some (`Enum x) | None ->
+    match Attr.str_o attrs "mask"
+    with Some x -> Some (`Mask x) | None ->
+    match Attr.str_o attrs "altenum"
+    with Some x -> Some (`Alt_enum x) | None ->
+    match Attr.str_o attrs "altmask"
+    with Some x -> Some (`Alt_mask x) | None -> None
   in
   name, { typ; allowed }
 
@@ -269,7 +276,7 @@ type static_field =
   | `List of string * field_type * expression ]
 
 
-let static_field_of_xml_el : xml_el -> static_field = function
+let static_field_of_xml_el : Xml.el -> static_field = function
   | "fd", ["name", name], [] ->
     `File_descriptor name
 
@@ -277,11 +284,11 @@ let static_field_of_xml_el : xml_el -> static_field = function
     `Pad (pad_of_xml attrs)
 
   | "field", attrs, [] ->
-    let name, typ = field_of_xml attrs in
+    let name, typ = field_of_attrs attrs in
     `Field (name, typ)
 
-  | "list", attrs, [Xml.Element expr] ->
-    let name, typ = field_of_xml attrs in
+  | "list", attrs, [Xml.E expr] ->
+    let name, typ = field_of_attrs attrs in
     `List (name, typ, expression_of_xml expr)
 
   | x, _, _ ->
@@ -289,8 +296,8 @@ let static_field_of_xml_el : xml_el -> static_field = function
 
 
 let static_field_of_xml = function
-  | Xml.PCData _ -> fail_unexpected "PCData in static field"
-  | Xml.Element el -> static_field_of_xml_el el
+  | Xml.D _ -> fail_unexpected "D in static field"
+  | Xml.E el -> static_field_of_xml_el el
 
 
 type dynamic_field =
@@ -298,17 +305,17 @@ type dynamic_field =
   | `List_var of string * field_type ]
 
 
-let dynamic_field_of_xml_el : xml_el -> dynamic_field = function
+let dynamic_field_of_xml_el : Xml.el -> dynamic_field = function
   | "list", attrs, [] ->
-    let name, typ = field_of_xml attrs in
+    let name, typ = field_of_attrs attrs in
     `List_var (name, typ)
 
   | other ->
     (static_field_of_xml_el other :> dynamic_field)
 
-let dynamic_field_of_xml : Xml.xml -> dynamic_field = function
-  | Xml.PCData _ -> fail_unexpected "PCData in dynamic field"
-  | Xml.Element el -> dynamic_field_of_xml_el el
+let dynamic_field_of_xml : Xml.t -> dynamic_field = function
+  | Xml.D _ -> fail_unexpected "D in dynamic field"
+  | Xml.E el -> dynamic_field_of_xml_el el
 
 
 type request_field =
@@ -316,9 +323,9 @@ type request_field =
   | `Expr of string * field_type * expression ]
 
 
-let request_field_of_xml_el : xml_el -> request_field = function
-  | "exprfield", attrs, [Xml.Element expr] ->
-    let name, typ = field_of_xml attrs in
+let request_field_of_xml_el : Xml.el -> request_field = function
+  | "exprfield", attrs, [Xml.E expr] ->
+    let name, typ = field_of_attrs attrs in
     `Expr (name, typ, expression_of_xml expr)
 
   | other ->
@@ -327,8 +334,8 @@ let request_field_of_xml_el : xml_el -> request_field = function
 
     (*
 let request_field_of_xml = function
-  | Xml.PCData _ -> fail_unexpected "invalid element in request field"
-  | Xml.Element el -> request_field_of_xml_el el
+  | Xml.D _ -> fail_unexpected "invalid element in request field"
+  | Xml.E el -> request_field_of_xml_el el
   *)
 
 
@@ -353,12 +360,12 @@ and case =
 
 let rec switch_of_xml fields =
   let parse_case name = function
-    | Xml.Element (n, attrs, fields) when n = name -> case_of_xml attrs fields
+    | Xml.E (n, attrs, fields) when n = name -> case_of_xml attrs fields
     | _ -> fail_unexpectedf "invalid switch: expected %s field" name in
   (* Take the first element, which should be the expression, and consume
    * the start align if it exists. *)
   let expr, align, fields = match fields with
-    | Xml.Element expr :: rest ->
+    | Xml.E expr :: rest ->
       let align, rest = consume_align rest in
       expr, align, rest
     | _ ->
@@ -368,9 +375,9 @@ let rec switch_of_xml fields =
   let cond, cases =
     (* Make sure that all elements are cases or bitcases. *)
     match fields with
-    | Xml.Element ("case", _, _) :: _ ->
+    | Xml.E ("case", _, _) :: _ ->
       `Eq expr,      List.map (parse_case "case") fields
-    | Xml.Element ("bitcase", _, _) :: _ ->
+    | Xml.E ("bitcase", _, _) :: _ ->
       `Bit_and expr, List.map (parse_case "bitcase") fields
     | _ ->
       fail_unexpected "invalid switch: expected case or bitcase field"
@@ -382,30 +389,30 @@ and case_of_xml name fields =
    * Clearly the designers of this format were above subtleties such as
    * "structured data". *)
   let rec parse_exprs exprs = function
-    | Xml.Element ("required_start_align", a, []) :: rest ->
+    | Xml.E ("required_start_align", a, []) :: rest ->
       let align = required_start_align_of_xml a in
       List.rev exprs, Some align, rest
 
-    | Xml.Element expr :: rest ->
+    | Xml.E expr :: rest ->
       begin try
         let expr = expression_of_xml expr in
         parse_exprs (expr :: exprs) rest
       with Unexpected _ ->
-        List.rev exprs, None, ((Xml.Element expr) :: rest)
+        List.rev exprs, None, ((Xml.E expr) :: rest)
       end
 
     | _ ->
       fail_unexpected "invalid case field"
   in
   let rec parse_fields fields = function
-    | Xml.Element ("switch", ["name", name], switch) :: [] ->
+    | Xml.E ("switch", ["name", name], switch) :: [] ->
       let switch = switch_of_xml switch in
       fields, Some (name, switch)
 
-    | Xml.Element ("switch", _, _) :: _ ->
+    | Xml.E ("switch", _, _) :: _ ->
       fail_unexpected "invalid case: switch not in tail position"
 
-    | Xml.Element field :: rest ->
+    | Xml.E field :: rest ->
       let field = static_field_of_xml_el field in
       parse_fields (field :: fields) rest
 
@@ -423,7 +430,7 @@ and case_of_xml name fields =
 
 let consume_switch =
   List'.extract (function
-    | Xml.Element ("switch", ["name", name], fields) ->
+    | Xml.E ("switch", ["name", name], fields) ->
       let switch = switch_of_xml fields in
       Some (name, switch)
     | _ ->
@@ -448,9 +455,9 @@ type allowed_events =
   { extension : string
   ; opcode_range : int * int }
 
-let allowed_events_of_xml : Xml.xml -> allowed_events = function
-  | Xml.Element ("allowed", attrs, []) ->
-    let extension = Attr.str attrs "extension" in
+let allowed_events_of_xml : Xml.t -> allowed_events = function
+  | Xml.E ("allowed", attrs, []) ->
+    let extension  = Attr.str attrs "extension" in
     let opcode_min = Attr.int attrs "opcode-min" in
     let opcode_max = Attr.int attrs "opcode-max" in
     { extension; opcode_range = (opcode_min, opcode_max) }
@@ -500,10 +507,10 @@ let request_of_xml fields : request_fields * reply option =
   let rec parse_params acc = function
     | [] ->
       acc, None
-    | Xml.Element ("reply", [], fields) :: [] ->
+    | Xml.E ("reply", [], fields) :: [] ->
       let reply = reply_of_xml fields in
       acc, Some reply
-    | Xml.Element f :: rest ->
+    | Xml.E f :: rest ->
       let f = request_field_of_xml_el f in
       parse_params (f :: acc) rest
     | _ ->
@@ -536,12 +543,12 @@ type declaration =
 
 
 
-let declaration_of_xml : Xml.xml -> declaration =
+let declaration_of_xml : Xml.t -> declaration =
   let failure = Unexpected "invalid declaration" in
   let open Xml in
-  function PCData _ -> raise failure | Element x' ->
+  function D _ -> raise failure | E x' ->
   match x' with
-  | "import", [], [PCData file] ->
+  | "import", [], [D file] ->
     `Import file
 
   | "xidtype",  ["name", id], [] ->
@@ -634,10 +641,10 @@ type protocol_file =
 let parse_file fname : protocol_file =
   let xml = Xml.parse_file fname in
   match xml with
-  | Xml.Element ("xcb", ["header", "xproto"], decls) ->
+  | Xml.E ("xcb", ["header", "xproto"], decls) ->
     Core (List.map declaration_of_xml decls)
 
-  | Xml.Element ("xcb", attrs, decls) ->
+  | Xml.E ("xcb", attrs, decls) ->
     let name       = Attr.str attrs "extension-name" in
     let file_name  = Attr.str attrs "header" in
     let query_name = Attr.str attrs "extension-xname" in

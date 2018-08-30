@@ -47,6 +47,3 @@ module List' = struct
         let found, ls = extract f rest in
         found, x :: ls
 end
-
-
-module String_map = MoreLabels.Map.Make(String)

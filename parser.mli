@@ -41,31 +41,6 @@ has an ad hoc field in the containing struct).
 {b NOTE}: These will have to be manually patched into switches somehow.
 
 
-{2 Enums}
-
-Enums are basically named values. They do not represent types, as they do not
-have a wire representation of their own: they can only be used in conjunction
-with a basic type, which defines the size and wire representation of the
-selected value.
-
-Enums are used for two different purposes: {b enumerations} and {b bitmasks}.
-An enum may be one or both at the same time, depending on whether it's referred
-to as [enum]/[altenum] or [mask]/[altmask] in a field type. [enumref]s in
-expressions count as an [enum] reference.
-
-{3 Enumerations}
-Enumerations are simple mappings from names to values. Only one value from an
-enumeration is allowed at a time.
-
-{3 Bitmasks}
-Bitmasks contain both [bit] values and [value] values.
-{ul {- [bit] is the 0-based position of the set bit in the resulting value
-       ([3] is [0b1000], or [1 lsl 3]).}
-    {- [value] is a useful literal default, such as [NoEvent] in
-       [xproto:EventMask].}}
-A bitmask can be either a list of [bit]s or a single [value].
-
-
 {2 Namespaces}
 
 The declarations have a few separate namespaces:
@@ -89,14 +64,16 @@ that names defined in the current extension take precedence over the rest.
 *)
 
 
+(** {2 Padding and alignment} *)
+
 type pad =
   [ `Bytes of int
   | `Align of int ]
 
 (** Padding bytes in a packet. *)
 type padding =
-  { pad       : pad
-  ; serialize : bool
+  { pd_pad       : pad
+  ; pd_serialize : bool
   (* This flag is only used in xkb to mark "true", if omitted it'll always be
      false. The documentation mentions that it's only needed for ABI
      compatibility with legacy (legacy what???) and thus should not be used
@@ -107,19 +84,45 @@ type padding =
 (* Something to do with an alignment checker. TODO check this out:
    https://cgit.freedesktop.org/xcb/proto/commit/?id=c499401bdac3b87bd4f9cd4bc64cfd1781ab447f *)
 type required_start_align =
-  { align  : int
-  ; offset : int option }
+  { al_align  : int
+  ; al_offset : int option }
 
+
+(** {2 Enums} *)
+(**
+Enums are basically named values. They do not represent types, as they do not
+have a wire representation of their own: they can only be used in conjunction
+with a basic type, which defines the size and wire representation of the
+selected value.
+
+Enums are used for two different purposes: {b enumerations} and {b bitmasks}.
+An enum may be one or both at the same time, depending on whether it's referred
+to as [enum]/[altenum] or [mask]/[altmask] in a field type. [enumref]s in
+expressions count as an [enum] reference.
+
+{3 Enumerations}
+Enumerations are simple mappings from names to values. Only one value from an
+enumeration is allowed at a time.
+
+{3 Bitmasks}
+Bitmasks contain both [bit] values and [value] values.
+{ul {- [bit] is the 0-based position of the set bit in the resulting value
+       ([3] is [0b1000], or [1 lsl 3]).}
+    {- [value] is a useful literal default, such as [NoEvent] in
+       [xproto:EventMask].}}
+A bitmask can be either a list of [bit]s or a single [value].
+*)
 
 type enum_vals = (string * int64) list
 type enum_bits = (string * int) list
 
 
-(** See above for documentation. *)
 type enum =
-  { vals : enum_vals
-  ; bits : enum_bits }
+  { en_vals : enum_vals
+  ; en_bits : enum_bits }
 
+
+(** {2 Expressions} *)
 
 type binop =
   [ `Add | `Sub | `Mul | `Div
@@ -155,6 +158,8 @@ type expression =
   ]
 
 
+(** {2 Struct fields} *)
+
 type allowed_vals =
   [ `Enum of string
   | `Mask of string
@@ -168,8 +173,8 @@ type allowed_vals =
    the [allowed] field will contain the name of the enum or the mask, while the
    [typ] field will be a basic type that determines its wire representation. *)
 type field_type =
-  { typ     : string
-  ; allowed : allowed_vals option }
+  { ft_type    : string
+  ; ft_allowed : allowed_vals option }
 
 
 type static_field =
@@ -194,6 +199,7 @@ type request_field =
   ]
 
 
+(** {2 Switch} *)
 
 type cond =
   [ `Bit_and of expression
@@ -205,22 +211,25 @@ type cond =
 (** A field that uses an expression to determine which fields are included in
    the enclosing struct. *)
 type switch =
-  { align : required_start_align option
-  ; cond  : cond
-  ; cases : case list }
+  { sw_align : required_start_align option
+  ; sw_cond  : cond
+  ; sw_cases : case list }
 
 (** Essentially an if statement which uses an operation that takes the
    switch expression and the case expression, and includes the fields it
    contains in the switch if it's true.
    If there are multiple expressions, they should be chained with boolean or. *)
 and case =
-  { exprs   : expression list
-  ; name    : string option
+  { cs_exprs  : expression list
+  ; cs_name   : string option
   (* We could use the name to output the record types for the fields, probably. *)
-  ; align_c : required_start_align option
-  ; fields  : static_field list
-  ; switch  : (string * switch) option }
+  ; cs_align  : required_start_align option
+  ; cs_fields : static_field list
+  ; cs_switch : (string * switch) option }
 
+
+
+(** {2 Structs} *)
 
 
 (** A 32-byte struct. The first byte contains the code in the first 7 least
@@ -230,25 +239,25 @@ and case =
    sequence number of the last request issued by the client.
    The code is 7-bit. *)
 type event =
-  { no_sequence_number : bool
+  { ev_no_sequence_number : bool
   (** A special case for the KeymapNotify event in xproto, which signals that
      the event struct does not contain a sequence number. *)
-  ; align  : required_start_align option
-  ; fields : static_field list }
+  ; ev_align  : required_start_align option
+  ; ev_fields : static_field list }
 
 (** The same as a normal event, but can also contain lists with no specified
    length. *)
 type generic_event =
-  { no_sequence_number : bool
-  ; align  : required_start_align option
-  ; fields : dynamic_field list }
+  { gev_no_sequence_number : bool
+  ; gev_align  : required_start_align option
+  ; gev_fields : dynamic_field list }
 
 
 type allowed_events =
-  { extension    : string
+  { aev_extension    : string
   (** The extension-name ([name] here) of the extension the events are defined
      in. *)
-  ; opcode_range : int * int
+  ; aev_opcode_range : int * int
   (** Only events that have opcodes within this range are allowed. *)
   }
 
@@ -258,34 +267,35 @@ type allowed_events =
    the least significant bits of the sequence number of the request.
    The code is 8-bit, unlike in events. *)
 type error =
-  { align  : required_start_align option
-  ; fields : static_field list }
+  { er_align  : required_start_align option
+  ; er_fields : static_field list }
 
 
 type struct_fields =
-  { fields : static_field list
-  ; switch : (string * switch) option }
+  { sf_fields : static_field list
+  ; sf_switch : (string * switch) option }
 
 
 type request_fields =
-  { align  : required_start_align option
-  ; fields : request_field list
-  ; switch : (string * switch) option }
+  { rf_align  : required_start_align option
+  ; rf_fields : request_field list
+  ; rf_switch : (string * switch) option }
 
 type reply =
-  { align  : required_start_align option
-  ; fields : dynamic_field list
-  ; switch : (string * switch) option }
+  { re_align  : required_start_align option
+  ; re_fields : dynamic_field list
+  ; re_switch : (string * switch) option }
 
 
 type request =
-  { combine_adjacent : bool
+  { rq_combine_adjacent : bool
   (** Whether multiple requests can be combined without affecting the
      semantics of the request. *)
-  ; params : request_fields
-  ; reply  : reply option }
+  ; rq_params : request_fields
+  ; rq_reply  : reply option }
 
 
+(** {2 Protocol files} *)
 
 type declaration =
   [ `Import of string

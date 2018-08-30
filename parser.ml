@@ -75,28 +75,28 @@ type pad =
   | `Align of int ]
 
 type padding =
-  { pad : pad
-  ; serialize : bool }
+  { pd_pad : pad
+  ; pd_serialize : bool }
 
 
 let pad_of_xml attrs : padding =
-  let serialize = Attr.bool_f attrs "serialize" in
-  let pad =
+  let pd_serialize = Attr.bool_f attrs "serialize" in
+  let pd_pad =
     try       `Bytes (Attr.int attrs "bytes")
     with _ -> `Align (Attr.int attrs "align")
   in
-  { pad; serialize }
+  { pd_pad; pd_serialize }
 
 
 type required_start_align =
-  { align : int
-  ; offset : int option }
+  { al_align : int
+  ; al_offset : int option }
 
 
 let required_start_align_of_xml attrs =
-  let align  = Attr.int attrs "align" in
-  let offset = Attr.int_o attrs "offset" in
-  { align; offset }
+  let al_align  = Attr.int attrs "align" in
+  let al_offset = Attr.int_o attrs "offset" in
+  { al_align; al_offset }
 
 
 let consume_align = function
@@ -132,8 +132,8 @@ type enum_bits = (string * int) list
 
 
 type enum =
-  { vals : enum_vals
-  ; bits : enum_bits }
+  { en_vals : enum_vals
+  ; en_bits : enum_bits }
 
 
 let enum_of_xml items =
@@ -160,8 +160,8 @@ let enum_of_xml items =
       fail_unexpected "invalid enum element"
   in
   let vals, bits, _doc = parse_items ([], []) items in
-  let vals, bits = List.rev vals, List.rev bits in
-  { vals; bits }
+  let en_vals, en_bits = List.rev vals, List.rev bits in
+  { en_vals; en_bits }
 
 
 
@@ -249,14 +249,14 @@ type allowed_vals =
   | `Alt_mask of string ]
 
 type field_type =
-  { typ : string
-  ; allowed : allowed_vals option }
+  { ft_type : string
+  ; ft_allowed : allowed_vals option }
 
 
 let field_of_attrs attrs : string * field_type =
-  let name = Attr.str attrs "name" in
-  let typ  = Attr.str attrs "type" in
-  let allowed =
+  let name    = Attr.str attrs "name" in
+  let ft_type = Attr.str attrs "type" in
+  let ft_allowed =
     match Attr.str_o attrs "enum"
     with Some x -> Some (`Enum x) | None ->
     match Attr.str_o attrs "mask"
@@ -266,7 +266,7 @@ let field_of_attrs attrs : string * field_type =
     match Attr.str_o attrs "altmask"
     with Some x -> Some (`Alt_mask x) | None -> None
   in
-  name, { typ; allowed }
+  name, { ft_type; ft_allowed }
 
 
 type static_field =
@@ -346,16 +346,16 @@ type cond =
   | `Eq of expression ]
 
 type switch =
-  { align : required_start_align option
-  ; cond : cond
-  ; cases : case list }
+  { sw_align : required_start_align option
+  ; sw_cond : cond
+  ; sw_cases : case list }
 
 and case =
-  { exprs : expression list
-  ; name : string option
-  ; align_c : required_start_align option
-  ; fields : static_field list
-  ; switch : (string * switch) option }
+  { cs_exprs : expression list
+  ; cs_name : string option
+  ; cs_align : required_start_align option
+  ; cs_fields : static_field list
+  ; cs_switch : (string * switch) option }
 
 
 let rec switch_of_xml fields =
@@ -364,7 +364,7 @@ let rec switch_of_xml fields =
     | _ -> fail_unexpectedf "invalid switch: expected %s field" name in
   (* Take the first element, which should be the expression, and consume
    * the start align if it exists. *)
-  let expr, align, fields = match fields with
+  let expr, sw_align, fields = match fields with
     | Xml.E expr :: rest ->
       let align, rest = consume_align rest in
       expr, align, rest
@@ -372,7 +372,7 @@ let rec switch_of_xml fields =
       fail_unexpected "invalid switch"
   in
   let expr = expression_of_xml expr in
-  let cond, cases =
+  let sw_cond, sw_cases =
     (* Make sure that all elements are cases or bitcases. *)
     match fields with
     | Xml.E ("case", _, _) :: _ ->
@@ -382,7 +382,7 @@ let rec switch_of_xml fields =
     | _ ->
       fail_unexpected "invalid switch: expected case or bitcase field"
   in
-  { align; cond; cases }
+  { sw_align; sw_cond; sw_cases }
 
 and case_of_xml name fields =
   (* Parse expressions until we fail or hit a start align.
@@ -422,10 +422,10 @@ and case_of_xml name fields =
     | _ ->
       fail_unexpected "invalid case field: expected element, got pcdata"
   in
-  let name = match name with ["name", name] -> Some name | _ -> None in
-  let exprs, align_c, fields = parse_exprs [] fields in
-  let fields, switch = parse_fields [] fields in
-  { name; exprs; align_c; fields; switch }
+  let cs_name = match name with ["name", name] -> Some name | _ -> None in
+  let cs_exprs, cs_align, fields = parse_exprs [] fields in
+  let cs_fields, cs_switch = parse_fields [] fields in
+  { cs_name; cs_exprs; cs_align; cs_fields; cs_switch }
 
 
 let consume_switch =
@@ -441,69 +441,69 @@ let consume_switch =
 
 (* ********** Structs ********** *)
 type event =
-  { no_sequence_number : bool
-  ; align : required_start_align option
-  ; fields : static_field list }
+  { ev_no_sequence_number : bool
+  ; ev_align : required_start_align option
+  ; ev_fields : static_field list }
 
 type generic_event =
-  { no_sequence_number : bool
-  ; align : required_start_align option
-  ; fields : dynamic_field list }
+  { gev_no_sequence_number : bool
+  ; gev_align : required_start_align option
+  ; gev_fields : dynamic_field list }
 
 
 type allowed_events =
-  { extension : string
-  ; opcode_range : int * int }
+  { aev_extension : string
+  ; aev_opcode_range : int * int }
 
 let allowed_events_of_xml : Xml.t -> allowed_events = function
   | Xml.E ("allowed", attrs, []) ->
-    let extension  = Attr.str attrs "extension" in
+    let aev_extension  = Attr.str attrs "extension" in
     let opcode_min = Attr.int attrs "opcode-min" in
     let opcode_max = Attr.int attrs "opcode-max" in
-    { extension; opcode_range = (opcode_min, opcode_max) }
+    { aev_extension; aev_opcode_range = (opcode_min, opcode_max) }
   | _ ->
     fail_unexpected "invalid element in event struct"
 
 
 type error =
-  { align : required_start_align option
-  ; fields : static_field list }
+  { er_align : required_start_align option
+  ; er_fields : static_field list }
 
 
 type struct_fields =
-  { fields : static_field list
-  ; switch : (string * switch) option }
+  { sf_fields : static_field list
+  ; sf_switch : (string * switch) option }
 
 
 type request_fields =
-  { align : required_start_align option
-  ; fields : request_field list
-  ; switch : (string * switch) option }
+  { rf_align : required_start_align option
+  ; rf_fields : request_field list
+  ; rf_switch : (string * switch) option }
 
 type reply =
-  { align : required_start_align option
-  ; fields : dynamic_field list
-  ; switch : (string * switch) option }
+  { re_align : required_start_align option
+  ; re_fields : dynamic_field list
+  ; re_switch : (string * switch) option }
 
 
 type request =
-  { combine_adjacent : bool
-  ; params : request_fields
-  ; reply : reply option }
+  { rq_combine_adjacent : bool
+  ; rq_params : request_fields
+  ; rq_reply : reply option }
 
 
 let reply_of_xml fields : reply =
-  let align, fields  = consume_align fields in
+  let re_align, fields  = consume_align fields in
   let _doc, fields   = consume_doc fields in
-  let switch, fields = consume_switch fields in
-  let fields = List.map dynamic_field_of_xml fields in
-  { align; fields; switch }
+  let re_switch, fields = consume_switch fields in
+  let re_fields = List.map dynamic_field_of_xml fields in
+  { re_align; re_fields; re_switch }
 
 
 let request_of_xml fields : request_fields * reply option =
-  let align, fields  = consume_align fields in
-  let _doc, fields   = consume_doc fields in
-  let switch, fields = consume_switch fields in
+  let rf_align, fields  = consume_align fields in
+  let _doc, fields      = consume_doc fields in
+  let rf_switch, fields = consume_switch fields in
   let rec parse_params acc = function
     | [] ->
       acc, None
@@ -516,8 +516,8 @@ let request_of_xml fields : request_fields * reply option =
     | _ ->
       fail_unexpected "invalid element in request"
   in
-  let fields, reply = parse_params [] fields in
-  { align; fields; switch }, reply
+  let rf_fields, reply = parse_params [] fields in
+  { rf_align; rf_fields; rf_switch }, reply
 
 
 
@@ -574,11 +574,21 @@ let declaration_of_xml : Xml.t -> declaration =
     let align, fields = consume_align fields in
     let _doc, fields = consume_doc fields in
     if is_generic then
-      let fields = List.map dynamic_field_of_xml fields in
-      `Generic_event (name, code, { no_sequence_number; align; fields })
+      let gev_fields = List.map dynamic_field_of_xml fields in
+      let gev =
+        { gev_no_sequence_number = no_sequence_number
+        ; gev_align = align
+        ; gev_fields }
+      in
+      `Generic_event (name, code, gev)
     else
-      let fields = List.map static_field_of_xml fields in
-      `Event (name, code, { no_sequence_number; align; fields })
+      let ev_fields = List.map static_field_of_xml fields in
+      let ev =
+        { ev_no_sequence_number = no_sequence_number
+        ; ev_align = align
+        ; ev_fields }
+      in
+      `Event (name, code, ev)
 
   | "eventstruct", ["name", name], allowed ->
     let allowed = List.map allowed_events_of_xml allowed in
@@ -593,9 +603,9 @@ let declaration_of_xml : Xml.t -> declaration =
   | "error", attrs, fields ->
     let name = Attr.str attrs "name" in
     let code = Attr.int attrs "number" in
-    let align, fields = consume_align fields in
-    let fields = List.map static_field_of_xml fields in
-    `Error (name, code, { align; fields })
+    let er_align, fields = consume_align fields in
+    let er_fields = List.map static_field_of_xml fields in
+    `Error (name, code, { er_align; er_fields })
 
   | "errorcopy", attrs, [] ->
     let new_name = Attr.str attrs "name" in
@@ -608,16 +618,16 @@ let declaration_of_xml : Xml.t -> declaration =
     `Union (name, fields)
 
   | "struct", ["name", name], fields ->
-    let switch, fields = consume_switch fields in
-    let fields = List.map static_field_of_xml fields in
-    `Struct (name, { fields; switch })
+    let sf_switch, fields = consume_switch fields in
+    let sf_fields = List.map static_field_of_xml fields in
+    `Struct (name, { sf_fields; sf_switch })
 
   | "request", attrs, fields ->
     let name = Attr.str attrs "name" in
     let opcode = Attr.int attrs "opcode" in
-    let combine_adjacent = Attr.bool_t attrs "combine-adjacent" in
-    let params, reply = request_of_xml fields in
-    `Request (name, opcode, { combine_adjacent; params; reply })
+    let rq_combine_adjacent = Attr.bool_t attrs "combine-adjacent" in
+    let rq_params, rq_reply = request_of_xml fields in
+    `Request (name, opcode, { rq_combine_adjacent; rq_params; rq_reply })
 
   | n, _, _ ->
     fail_unexpectedf "invalid declaration: %s" n

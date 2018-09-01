@@ -320,8 +320,7 @@ include Pass.Make(struct
         |> Util.List'.filter_map
         |> List.rev
       in
-      let evs = List.map resolve evs |> List.flatten
-      in
+      let evs = List.map resolve evs |> List.flatten in
       `Event_struct (name, evs)
 
     | #common_p0_p1 as d ->

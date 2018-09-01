@@ -29,9 +29,7 @@ module List' = struct
 
   let rec first_exn test = function
     | [] ->
-      (match name with
-      | Some name -> invalid_arg name
-      | None -> raise Not_found)
+      raise Not_found
     | hd :: tl ->
       match test hd with
       | Some x -> x

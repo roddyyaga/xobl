@@ -23,5 +23,5 @@ let%test_unit "analyzer test" =
       String_map.add acc ~key:ext.Types.file_name ~data:ext
     ) String_map.empty
   in
-  let _exts = P1_resolve_types.pass exts in
+  let _exts = P1_resolve.pass exts in
   ()

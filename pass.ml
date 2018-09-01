@@ -1,13 +1,6 @@
 module T = Types
 
 
-module type Prev = sig
-  type declaration
-
-  type extension = declaration T.extension
-end
-
-
 module type S = sig
   type declaration
 
@@ -20,7 +13,11 @@ end
 
 
 module type P = sig
-  module Prev : Prev
+  module Prev : sig
+    type declaration
+
+    type extension = declaration T.extension
+  end
 
   type declaration
 
@@ -28,9 +25,9 @@ module type P = sig
 end
 
 
-module Make(P : P) :
-  S with type declaration = P.declaration
-    with type prev_extension = P.Prev.extension
+module Make(P : P) : S
+  with type declaration = P.declaration
+  with type prev_extension = P.Prev.extension
 = struct
   type prev_extension = P.Prev.extension
 

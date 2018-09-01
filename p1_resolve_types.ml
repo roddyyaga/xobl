@@ -1,5 +1,5 @@
 (**
-Pass 1, in which we resolve the types and the enums.
+Pass 1, in which we resolve all that can be resolved.
 *)
 
 module X = Parser
@@ -103,15 +103,16 @@ include Pass.Make(struct
 
 
   type common_p0_p1 =
-    [ `Enum of string * X.enum
-
-    | `Event_struct of string * X.allowed_events list
-
-    | `Event_alias of string * int * string
-    | `Error_alias of string * int * string ]
+    [ `Enum of string * X.enum ]
 
   type declaration =
     [ common_p0_p1
+
+    | `Event_struct of string * T.ident list
+
+    | `Event_alias of string * int * T.ident
+    | `Error_alias of string * int * T.ident
+
     | `Alias of string * T.x_type
     | `X_id_union of string * T.ident list
 
@@ -302,6 +303,26 @@ include Pass.Make(struct
       let rq_params = resolve_in_request_fields ext rq_params in
       let rq_reply = Option.map (resolve_in_reply ext) rq_reply in
       `Request (name, n, { rq_combine_adjacent; rq_params; rq_reply })
+
+    | `Event_alias (name, no, old) ->
+      let old = Cache.lookup_event ext old in
+      `Event_alias (name, no, old)
+
+    | `Error_alias (name, no, old) ->
+      let old = Cache.lookup_error ext old in
+      `Error_alias (name, no, old)
+
+    | `Event_struct (name, evs) ->
+      let resolve X.{ aev_extension; aev_opcode_range = (min, max) } =
+        List.init (max - min + 1) (fun n -> n + 1)
+        |> List.map (fun n -> n + min - 1)
+        |> List.map (Cache.event_name_from_no ext aev_extension)
+        |> Util.List'.filter_map
+        |> List.rev
+      in
+      let evs = List.map resolve evs |> List.flatten
+      in
+      `Event_struct (name, evs)
 
     | #common_p0_p1 as d ->
       d

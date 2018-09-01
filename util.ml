@@ -29,7 +29,9 @@ module List' = struct
 
   let rec first_exn test = function
     | [] ->
-      raise Not_found
+      (match name with
+      | Some name -> invalid_arg name
+      | None -> raise Not_found)
     | hd :: tl ->
       match test hd with
       | Some x -> x
@@ -46,4 +48,9 @@ module List' = struct
         (* Not tail-recursive, but eh *)
         let found, ls = extract f rest in
         found, x :: ls
+
+  let filter_map ls =
+    let f acc = function Some x -> x :: acc | None -> acc in
+    List.fold_left f [] ls
+    |> List.rev
 end

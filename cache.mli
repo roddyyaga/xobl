@@ -13,3 +13,10 @@ val lookup_enum : 'a Types.extension -> [ `Enum | `Mask ] -> string -> Types.ide
 type enum_refs = { enums : int; masks : int }
 
 val enum_refs : unit -> enum_refs list
+
+
+val lookup_event : 'a Types.extension -> string -> Types.ident
+
+val lookup_error : 'a Types.extension -> string -> Types.ident
+
+val event_name_from_no : 'a Types.extension -> string -> int -> Types.ident option

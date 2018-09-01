@@ -258,7 +258,7 @@ type allowed_events =
   (** The extension-name ([name] here) of the extension the events are defined
      in. *)
   ; aev_opcode_range : int * int
-  (** Only events that have opcodes within this range are allowed. *)
+  (** Only events that have opcodes within this range are allowed. (min, max) *)
   }
 
 

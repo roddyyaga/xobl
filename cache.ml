@@ -13,7 +13,8 @@ let lookup tbl (update : 'a -> 'a) used_ext name =
   let get name ext t = t.name = name && t.ext = ext in
   String'.split ':' name
   |> Option.map (fun (ext, name) ->
-      let item = List.find (get name ext) !tbl in
+      let item = List.find_opt (get name ext) !tbl in
+      let item = match item with None -> invalid_arg name | Some i -> i in
       item.refs <- update item.refs;
       if used_ext.Types.file_name = ext then
         Types.Id name
@@ -37,7 +38,7 @@ let lookup tbl (update : 'a -> 'a) used_ext name =
     )))
 
 
-(* *)
+(* Types *)
 let type_table : int table list ref = ref []
 
 let lookup_type_id used_ext name =
@@ -49,7 +50,7 @@ let lookup_type used_ext name =
   | None   -> Types.Ref (lookup_type_id used_ext name)
 
 
-(* *)
+(* Enums *)
 type enum_refs = { enums : int; masks : int }
 
 let enum_table : enum_refs table list ref = ref []
@@ -65,6 +66,42 @@ let enum_refs () =
   List.map (fun x -> x.refs) !enum_table
 
 
+(* Events/errors *)
+let event_table : unit table list ref = ref []
+
+let lookup_event ext =
+  let f () = () in
+  lookup event_table f ext
+
+let error_table : unit table list ref = ref []
+
+let lookup_error ext =
+  let f () = () in
+  lookup error_table f ext
+
+
+type event_no =
+  { ev_name   : string
+  ; ev_ext    : string
+  (* NOTE: for some inexplicable reason, the Parser.extension_info field
+     to use here is [name] instead of [file_name]. *)
+  ; ev_number : int }
+
+let event_no_table : event_no list ref = ref []
+
+let event_name_from_no curr_ext ext no =
+  let find ev = ev.ev_ext = ext && ev.ev_number = no in
+  List.find_opt find !event_no_table
+  |> Option.map (fun ev ->
+    if curr_ext.Types.file_name = ext then
+      Types.Id ev.ev_name
+    else
+      Types.Ext_id (ext, ev.ev_name)
+  )
+
+
+
+
 let init =
   List.iter (fun ext ->
     ext.Types.declarations |> List.iter (function
@@ -78,6 +115,16 @@ let init =
 
       | `Enum (name, _) ->
         add_to_table enum_table ext.Types.file_name name { enums = 0; masks = 0 }
+
+      | `Event (name, no, _) ->
+        add_to_table event_table ext.Types.file_name name ();
+        event_no_table := { ev_name = name; ev_ext = ext.Types.name; ev_number = no } :: !event_no_table
+
+      | `Error (name, _, _) ->
+        add_to_table error_table ext.Types.file_name name ()
+
+      | `Generic_event (name, _, _) ->
+        add_to_table event_table ext.Types.file_name name ()
 
       | _ -> ()
   ))

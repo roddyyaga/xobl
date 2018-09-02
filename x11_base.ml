@@ -1,6 +1,11 @@
 type xid = int32
 
 
+type ('a, 'b) either =
+  | Left of 'a
+  | Right of 'b
+
+
 type ('a, 'b) mask =
   | Flags of 'a list
   | Val of 'b

@@ -25,12 +25,6 @@ type field_type =
   | Enum_or of T.ident * T.x_type
   | Mask_or of T.ident * T.x_type
 
-  (*
-type field_type =
-  { ft_type : T.x_type
-  ; ft_enum : X.allowed_vals option }
-  *)
-
 type static_field =
   [ `Pad of X.padding
   | `Field of string * field_type

@@ -23,5 +23,8 @@ let%test_unit "analyzer test" =
       String_map.add acc ~key:ext.Types.file_name ~data:ext
     ) String_map.empty
   in
-  let _exts = P1_resolve.pass exts in
-  ()
+  let exts = P1_resolve.pass exts in
+  let out = open_out "stuffs.ml" in
+  String_map.iter exts ~f:(fun ~key:_ ~data:ext ->
+    Generator.generate out ext
+  )

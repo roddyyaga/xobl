@@ -12,7 +12,7 @@ val lookup_enum : 'a Types.extension -> [ `Enum | `Mask ] -> string -> Types.ide
 
 type enum_refs = { enums : int; masks : int }
 
-val enum_refs : unit -> enum_refs list
+val enum_refs : string -> string -> enum_refs
 
 
 val lookup_event : 'a Types.extension -> string -> Types.ident

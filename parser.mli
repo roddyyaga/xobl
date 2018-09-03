@@ -38,7 +38,6 @@ Unions are an earlier version of switches, which require additional processing
 to determine which field is included (the method used depends on the extension,
 of course: xkb uses a field named [type] which refers to an enum while xproto
 has an ad hoc field in the containing struct).
-{b NOTE}: These will have to be manually patched into switches somehow.
 
 
 {2 Namespaces}
@@ -52,6 +51,9 @@ The declarations have a few separate namespaces:
 - errors
 - requests
 
+{b NOTE}: the distinction between events and generic events {b does not} apply
+to their event number; these are shared between both event types.
+
 {3 Name clashes}
 Name clashes {i within} these namespaces are allowed between different
 extensions. To disambiguate in the case that a declaration references a
@@ -59,7 +61,7 @@ name exported by two or more extensions currently in scope, the extension's
 ID (here aliased as [file_name]) is prefixed to the name with a colon, such
 as [xproto:PIXMAP].
 
-{b NOTE}: some extensions DO NOT follow this rule, in which case I assumed
+{b NOTE}: some extensions {b do not} follow this rule, in which case I assumed
 that names defined in the current extension take precedence over the rest.
 *)
 

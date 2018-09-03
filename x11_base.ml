@@ -1,4 +1,5 @@
 type xid = int32
+type fd = int
 
 
 type ('a, 'b) either =

@@ -71,7 +71,7 @@ let prim_str =
     | Int8   -> "int"
     | Int16  -> "int"
     | Int32  -> "int32"
-    | Fd     -> "int"
+    | Fd     -> "fd"
     | Card8  -> "int"
     | Card16 -> "int"
     | Card32 -> "int32"
@@ -197,9 +197,9 @@ let generate out (ext : Last_pass.extension) =
   let pn () = output_char out '\n' in
 
   pe "(*****************************************************************************)";
-  fe "module %s = struct" (String.capitalize_ascii ext.name);
+  fe "module %s = struct" (caml_cased ext.file_name);
   pe "(*****************************************************************************)";
-  pe "open X11_base";
+  (* pe "open X11_base";*)
 
   ext.version |> Option.iter (fun (maj, min) ->
     fe "let version = (%d, %d)" maj min);
@@ -215,12 +215,15 @@ let generate out (ext : Last_pass.extension) =
         by the users or can we get by just using the enums?
       *)
       fe "type %s = %s" (identifier n) (x_type_str t)
+
+
     | `X_id_union (name, _) ->
       (* XID unions are hardly used in the codebase, and outputting a variant
          type rather than simply aliasing them to XIDs would be way more
          trouble than it's worth. It's not strictly correct, but it's usable.
       *)
       fe "type %s = xid" (identifier name)
+
 
     | `Enum (name, Parser.{ en_vals; en_bits }) ->
       (* We need to know a few things here:
@@ -230,19 +233,49 @@ let generate out (ext : Last_pass.extension) =
           items too? (probably not, but maybe we could provide some compare
           functions)
       *)
-      fe "type %s_enum = [" (identifier name);
-      en_vals |> List.iter (fun (name, _n) ->
-        fe "  | `%s" (variant name)
-      );
-      en_bits |> List.iter (fun (name, _n) ->
-        fe "  | `%s" (variant name)
-      );
-      pe "]"
+      let refs = Cache.enum_refs ext.file_name name in
+      let ident = identifier name in
+
+      if List.length en_vals > 0 then begin
+        if List.length en_bits > 0 then
+          fe "type %s_vals = [" ident
+        else
+          fe "type %s_enum = [" ident;
+        en_vals |> List.iter begin fun (name, _n) ->
+          fe "  | `%s" (variant name)
+        end;
+        pe "]"
+      end;
+      if List.length en_bits > 0 then begin
+        fe "type %s_bits = [" ident;
+        en_bits |> List.iter begin fun (name, _n) ->
+          fe "  | `%s" (variant name)
+        end;
+        pe "]"
+      end;
+
+      if refs.enums > 0 then begin
+        match List.length en_vals, List.length en_bits with
+        | 0, 0 -> assert false
+        | 0, _ ->
+          fe "type %s_enum = %s_bits" ident ident
+        | _, 0 ->
+          ()
+        | _, _ ->
+          fe "type %s_enum = [ %s_vals | %s_bits ]" ident ident ident
+      end;
+      if refs.masks > 0 then
+        if List.length en_vals > 0 then
+          fe "type %s_mask = (%s_bits, %s_vals) mask" ident ident ident
+        else
+          fe "type %s_mask = %s_bits list" ident ident;
+
 
     | `Union (name, fields) ->
-      fe "type %s_union = {" (identifier name);
+      fe "type %s = {" (identifier name);
       List.iter (fun x -> pe ("  " ^ static_field_str x)) fields;
       pe "}"
+
 
     | `Struct (struct_name, s) ->
       Option.iter (fun (field_name, sw) ->
@@ -274,14 +307,18 @@ let generate out (ext : Last_pass.extension) =
         ) cases;
         pe "]"
       ) s.Last_pass.sf_switch;
-      fe "type %s = {" (identifier struct_name);
-      s.Last_pass.sf_fields |> List.iter (fun x ->
-        fe "  %s" (static_field_str x));
-      s.Last_pass.sf_switch |> Option.iter (fun (field_name, _sw) ->
-        fe "  %s : %s_%s_switch;"
-          (identifier field_name) (identifier struct_name) (identifier field_name)
-      );
-      pe "}"
+      if List.length (List.filter (function `Pad _ -> false | _ -> true) s.Last_pass.sf_fields) > 0 then begin
+        fe "type %s = {" (identifier struct_name);
+        s.Last_pass.sf_fields |> List.iter (fun x ->
+          fe "  %s" (static_field_str x));
+        s.Last_pass.sf_switch |> Option.iter (fun (field_name, _sw) ->
+          fe "  %s : %s_%s_switch;"
+            (identifier field_name) (identifier struct_name) (identifier field_name)
+        );
+        pe "}"
+      end else
+        fe "type %s = unit" (identifier struct_name)
+
 
     | _ ->
       ()

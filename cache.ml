@@ -62,8 +62,9 @@ let lookup_enum ext x =
   in
   lookup enum_table f ext
 
-let enum_refs () =
-  List.map (fun x -> x.refs) !enum_table
+let enum_refs ext name =
+  let e = List.find (fun x -> x.ext = ext && x.name = name) !enum_table in
+  e.refs
 
 
 (* Events/errors *)

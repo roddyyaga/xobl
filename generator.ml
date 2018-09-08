@@ -97,8 +97,9 @@ let prim_get =
   | Char | Byte | Int8 | Card8 -> "get_byte"
   | Int16 | Fd -> "get_int16"
   | Card16 -> "get_uint16"
-  | Int32 | Xid -> "get_int32"
+  | Int32 -> "get_int32"
   | Card32 -> "get_uint32"
+  | Xid -> "get_xid"
   | p -> Printf.kprintf invalid_arg "not implemented: %s" (prim_str p)
 
 

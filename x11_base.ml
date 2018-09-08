@@ -1,5 +1,8 @@
 type xid = int32
+
 type fd = int
+
+type buffer = string
 
 
 type ('l, 'r) either =
@@ -12,6 +15,7 @@ type ('flags, 'vals) mask =
   | Val of 'vals
 
 
+  (*
 type 'a error =
   { name    : string
   ; code    : int
@@ -22,6 +26,7 @@ type 'a event =
   { name    : string
   ; code    : int
   ; content : string -> int -> 'a }
+*)
 
 
 (* Little endian *)
@@ -51,6 +56,8 @@ let get_bool buf at =
   match get_byte buf at with
   | 0 -> false
   | _ -> true
+
+let get_xid = get_uint32
 
 
 let parse_error buf =

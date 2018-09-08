@@ -81,6 +81,27 @@ let prim_str =
     | Xid    -> "xid"
 
 
+let prim_len =
+  let open Prim in function
+  | Void -> 0
+  | Char | Byte | Bool | Int8 | Card8 -> 1
+  | Int16 | Card16 | Fd -> 2
+  | Int32 | Card32 | Float | Xid -> 4
+  | Card64 | Double -> 8
+
+
+let prim_get =
+  let open Prim in function
+  | Void -> "(fun _ _ -> ())"
+  | Bool -> "get_bool"
+  | Char | Byte | Int8 | Card8 -> "get_byte"
+  | Int16 | Fd -> "get_int16"
+  | Card16 -> "get_uint16"
+  | Int32 | Xid -> "get_int32"
+  | Card32 -> "get_uint32"
+  | p -> Printf.kprintf invalid_arg "not implemented: %s" (prim_str p)
+
+
 let x_type_str = function
   | Types.Prim t -> prim_str t
   | Types.Ref id -> ident_str id
@@ -193,6 +214,7 @@ let switch_cond_str : Last_pass.cond -> string = function
 
 let generate out (ext : Last_pass.extension) =
   let fe fmt = Printf.fprintf out (fmt ^^ "\n") in
+  let ps s = output_string out s in
   let pe s = output_string out s; output_char out '\n' in
   let pn () = output_char out '\n' in
 
@@ -320,7 +342,55 @@ let generate out (ext : Last_pass.extension) =
         fe "type %s = unit" (identifier struct_name)
 
 
-    | _ ->
+    | `Error (err_name, number, error) ->
+      if List.length (List.filter (function `Pad _ -> false | _ -> true) error.Last_pass.er_fields) > 0 then begin
+        fe "type %s_error_content = {" (identifier err_name);
+        error.Last_pass.er_fields |> List.iter (fun x ->
+          fe "  %s" (static_field_str x));
+        pe "}";
+        fe "let parse_%s_error buf : %s_error_content =" (identifier err_name) (identifier err_name);
+        let offset = ref 4 in
+        error.Last_pass.er_fields |> List.iter (function
+          | `Pad Parser.{ pd_pad = `Bytes b; _ } ->
+            fe "  (* padding: %d bytes *)" b;
+            offset := !offset + b
+          | `Field (name, Last_pass.Prim (Types.Prim p)) ->
+            let len = prim_len p in
+            fe "  let %s = %s buf %d in" (identifier name) (prim_get p) !offset;
+            offset := !offset + len
+          | _ ->
+            fe "(* UNSUPPORTED FIELD *)"
+        );
+        ps "  { ";
+        error.Last_pass.er_fields |> List.iter (function
+          | `Field (name, _) | `List (name, _, _) | `File_descriptor name ->
+            ps (identifier name ^ "; ")
+          | `Pad _ -> ()
+        );
+        pe "}"
+      end else (
+        fe "type %s_error_content = ()" (identifier err_name);
+        fe "let parse_%s_error _ : %s_error_content = ()" (identifier err_name) (identifier err_name)
+      );
+      fe "(* error n.%d *)" number
+
+
+    | `Error_alias (err_name, _number, old) ->
+      begin match old with
+      | Types.Id n ->
+        fe "type %s_error_content = %s_error_content" (identifier err_name) (identifier n);
+        fe "let parse_%s_error : string -> %s_error_content =\n  parse_%s_error"
+          (identifier err_name) (identifier err_name) (identifier n)
+      | Types.Ext_id (e, n) ->
+        fe "type %s_error_content = %s.%s_error_content" (identifier err_name)
+          (caml_cased e) (identifier n);
+        fe "let parse_%s_error : string -> %s_error_content =\n  %s.parse_%s_error"
+          (identifier err_name) (identifier err_name) (caml_cased e) (identifier n)
+      end
+
+
+    | `Request _ | `Event _ | `Generic_event _
+    | `Event_alias _ | `Event_struct _ ->
       ()
   end;
   pe "end";

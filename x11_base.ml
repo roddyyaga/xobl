@@ -2,14 +2,14 @@ type xid = int32
 type fd = int
 
 
-type ('a, 'b) either =
-  | Left of 'a
-  | Right of 'b
+type ('l, 'r) either =
+  | Left of 'l
+  | Right of 'r
 
 
-type ('a, 'b) mask =
-  | Flags of 'a list
-  | Val of 'b
+type ('flags, 'vals) mask =
+  | Flags of 'flags list
+  | Val of 'vals
 
 
 type 'a error =
@@ -47,7 +47,8 @@ let get_uint32 buf at =
 let get_int16 = get_uint16
 let get_int32 = get_uint32
 
-let get_bool buf at = match get_byte buf at with
+let get_bool buf at =
+  match get_byte buf at with
   | 0 -> false
   | _ -> true
 

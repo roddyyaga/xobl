@@ -24,6 +24,7 @@ let%test_unit "analyzer test" =
     ) String_map.empty
   in
   let exts = P1_resolve.pass exts in
+  let exts = P2_fields.pass exts in
   let out = open_out "stuffs.ml" in
   output_string out "open X11_base\n\n";
   String_map.iter exts ~f:(fun ~key:_ ~data:ext ->

@@ -1,6 +1,3 @@
-module Last_pass = P1_resolve
-
-
 let snake_cased name =
   if String.uppercase_ascii name = name then
     (* The string is already snake_cased, just make sure it's lowercase. *)
@@ -109,7 +106,7 @@ let x_type_str = function
 
 
 let field_type_str =
-  let open Last_pass in function
+  let open P1_resolve in function
     | Prim t ->
       x_type_str t
     | Enum (e, t) ->
@@ -158,7 +155,7 @@ let unop_str : Parser.unop -> string = function
   | `Bit_not -> "lnot"
 
 
-let rec expression_str : Last_pass.expression -> string =
+let rec expression_str : P1_resolve.expression -> string =
   let p fmt = Printf.sprintf fmt in
   function
   | `Binop (op, e1, e2) ->
@@ -168,7 +165,7 @@ let rec expression_str : Last_pass.expression -> string =
   | `Field_ref n ->
     identifier n
   | `Param_ref (n, _) ->
-    identifier n
+    identifier n ^ " (* param *)"
   | `Enum_ref (_en, i) ->
     "`" ^ (caml_cased i)
   | `Sum_of (f, e) ->
@@ -188,9 +185,11 @@ let rec expression_str : Last_pass.expression -> string =
     string_of_int (1 lsl n)
 
 
-let static_field_str : Last_pass.static_field -> string = function
+let static_field_str : P2_fields.static_field -> string = function
   | `Pad p ->
     Printf.sprintf "(* pad: %s *)" (padding_str p)
+  | `List_length (name, t) ->
+    Printf.sprintf "(* length field: %s : %s *)" (identifier name) (field_type_str t)
   | `Field (n, t) ->
     Printf.sprintf "%s : %s;" (identifier n) (field_type_str t)
   | `List (n, t, l) ->
@@ -213,7 +212,7 @@ let switch_cond_str : Last_pass.cond -> string = function
 - handle empty (only padding) structs
 *)
 
-let generate out (ext : Last_pass.extension) =
+let generate out (ext : P2_fields.extension) =
   let fe fmt = Printf.fprintf out (fmt ^^ "\n") in
   let ps s = output_string out s in
   let pe s = output_string out s; output_char out '\n' in
@@ -302,7 +301,7 @@ let generate out (ext : Last_pass.extension) =
 
     | `Struct (struct_name, s) ->
       Option.iter (fun (field_name, sw) ->
-        let open Last_pass in
+        let open P2_fields in
         let cases =
           sw.sw_cases |> List.map (fun case ->
             let expr = match case.cs_exprs with
@@ -329,12 +328,12 @@ let generate out (ext : Last_pass.extension) =
           fe "  | `%s of %s" (variant name) t_name
         ) cases;
         pe "]"
-      ) s.Last_pass.sf_switch;
-      if List.length (List.filter (function `Pad _ -> false | _ -> true) s.Last_pass.sf_fields) > 0 then begin
+      ) s.P2_fields.sf_switch;
+      if List.length (List.filter (function `Pad _ -> false | _ -> true) s.P2_fields.sf_fields) > 0 then begin
         fe "type %s = {" (identifier struct_name);
-        s.Last_pass.sf_fields |> List.iter (fun x ->
+        s.P2_fields.sf_fields |> List.iter (fun x ->
           fe "  %s" (static_field_str x));
-        s.Last_pass.sf_switch |> Option.iter (fun (field_name, _sw) ->
+        s.P2_fields.sf_switch |> Option.iter (fun (field_name, _sw) ->
           fe "  %s : %s_%s_switch;"
             (identifier field_name) (identifier struct_name) (identifier field_name)
         );
@@ -344,18 +343,18 @@ let generate out (ext : Last_pass.extension) =
 
 
     | `Error (err_name, number, error) ->
-      if List.length (List.filter (function `Pad _ -> false | _ -> true) error.Last_pass.er_fields) > 0 then begin
+      if List.length (List.filter (function `List_length _ | `Pad _ -> false | _ -> true) error.P2_fields.er_fields) > 0 then (
         fe "type %s_error_content = {" (identifier err_name);
-        error.Last_pass.er_fields |> List.iter (fun x ->
+        error.P2_fields.er_fields |> List.iter (fun x ->
           fe "  %s" (static_field_str x));
         pe "}";
         fe "let parse_%s_error buf : %s_error_content =" (identifier err_name) (identifier err_name);
         let offset = ref 4 in
-        error.Last_pass.er_fields |> List.iter (function
+        error.P2_fields.er_fields |> List.iter (function
           | `Pad Parser.{ pd_pad = `Bytes b; _ } ->
             fe "  (* padding: %d bytes *)" b;
             offset := !offset + b
-          | `Field (name, Last_pass.Prim (Types.Prim p)) ->
+          | `Field (name, P1_resolve.Prim (Types.Prim p)) ->
             let len = prim_len p in
             fe "  let %s = %s buf %d in" (identifier name) (prim_get p) !offset;
             offset := !offset + len
@@ -363,13 +362,13 @@ let generate out (ext : Last_pass.extension) =
             fe "(* UNSUPPORTED FIELD *)"
         );
         ps "  { ";
-        error.Last_pass.er_fields |> List.iter (function
+        error.P2_fields.er_fields |> List.iter (function
           | `Field (name, _) | `List (name, _, _) | `File_descriptor name ->
             ps (identifier name ^ "; ")
-          | `Pad _ -> ()
+          | `List_length _ | `Pad _ -> ()
         );
         pe "}"
-      end else (
+      ) else (
         fe "type %s_error_content = ()" (identifier err_name);
         fe "let parse_%s_error _ : %s_error_content = ()" (identifier err_name) (identifier err_name)
       );

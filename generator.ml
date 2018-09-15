@@ -195,8 +195,6 @@ let static_field_str : P2_fields.static_field -> string = function
   | `List (n, t, l) ->
     Printf.sprintf "%s : %s array; (* length: %s *)"
       (identifier n) (field_type_str t) (expression_str l)
-  | `File_descriptor n ->
-    Printf.sprintf "%s : file_descriptor;" (identifier n)
 
 
 (*
@@ -363,7 +361,7 @@ let generate out (ext : P2_fields.extension) =
         );
         ps "  { ";
         error.P2_fields.er_fields |> List.iter (function
-          | `Field (name, _) | `List (name, _, _) | `File_descriptor name ->
+          | `Field (name, _) | `List (name, _, _) ->
             ps (identifier name ^ "; ")
           | `List_length _ | `Pad _ -> ()
         );

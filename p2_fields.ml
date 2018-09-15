@@ -4,7 +4,6 @@ type static_field =
   [ `Pad of Parser.padding
   | `Field of string * Prev.field_type
   | `List of string * Prev.field_type * Prev.expression
-  | `File_descriptor of string
   | `List_length of string * Prev.field_type ]
 
 type dynamic_field =
@@ -130,13 +129,7 @@ include Pass.Make(struct
     | `Value _ | `Bit _ ->
       n
 
-  type field_list = [ `List of string * Prev.field_type * Prev.expression ]
-  type field' =
-    [ field_list
-    | `Field of string * Prev.field_type
-    | `List_length of string * Prev.field_type ]
-
-  let in_fields (fields : [> field' ] list) : [> field' ] list =
+  let in_fields (fields : [> static_field ] list) : [> static_field ] list =
     List.fold_right (fun field acc -> match field with
       | `List (_, _, expr) ->
         begin match expr_stuff `None expr with
@@ -153,16 +146,29 @@ include Pass.Make(struct
         acc
     ) fields fields
 
+  let del_fd_static : Prev.static_field -> static_field = function
+    | `File_descriptor name ->
+      `Field (name, Prev.Prim (Types.Prim Prim.Fd))
+    | `Pad _ | `Field _ | `List _ as d -> d
+
+  let del_fd_dynamic : Prev.dynamic_field -> dynamic_field = function
+    | `List_var _ as d -> d
+    | #Prev.static_field as d -> (del_fd_static d :> dynamic_field)
+
+  let del_fd_request : Prev.request_field -> request_field = function
+    | `Expr _ as d -> d
+    | #Prev.dynamic_field as d -> (del_fd_dynamic d :> request_field)
+
   let in_static_fields (fields : Prev.static_field list) : static_field list =
-    let fields = List.map (fun x -> (x :> static_field)) fields in
+    let fields = List.map del_fd_static fields in
     in_fields fields
 
   let in_dynamic_fields (fields : Prev.dynamic_field list) : dynamic_field list =
-    let fields = List.map (fun x -> (x :> dynamic_field)) fields in
+    let fields = List.map del_fd_dynamic fields in
     in_fields fields
 
   let in_request_fields (fields : Prev.request_field list) : request_field list =
-    let fields = List.map (fun x -> (x :> request_field)) fields in
+    let fields = List.map del_fd_request fields in
     in_fields fields
 
 
@@ -184,7 +190,7 @@ include Pass.Make(struct
 
   let map _exts _ext : Prev.declaration -> declaration = function
     | `Union (name, fields) ->
-      let fields = List.map (fun x -> (x :> static_field)) fields in
+      let fields = List.map del_fd_static fields in
       `Union (name, fields)
 
     | `Struct (name, { sf_fields; sf_switch }) ->

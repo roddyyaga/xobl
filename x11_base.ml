@@ -16,12 +16,6 @@ type ('flags, 'vals) mask =
 
 
   (*
-type 'a error =
-  { name    : string
-  ; code    : int
-  ; content : string -> int -> 'a }
-
-
 type 'a event =
   { name    : string
   ; code    : int
@@ -60,8 +54,8 @@ let get_bool buf at =
 let get_xid = get_uint32
 
 
-let parse_error buf =
-  assert (get_byte buf 0 = 0);
-  let code = get_byte buf 1 in
-  let seq_num = get_uint16 buf 2 in
+let parse_error buf at =
+  assert (get_byte buf at = 0);
+  let code = get_byte buf (at + 1) in
+  let seq_num = get_uint16 buf (at + 2) in
   (code, seq_num)

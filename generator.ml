@@ -349,11 +349,11 @@ let generate out (ext : P2_fields.extension) =
 
     | `Error (err_name, number, error) ->
       if List.length (List.filter (function `List_length _ | `Pad _ -> false | _ -> true) error.P2_fields.er_fields) > 0 then (
-        fe "type %s_error_content = {" (snake_cased err_name);
+        fe "type %s_error = {" (snake_cased err_name);
         error.P2_fields.er_fields |> List.iter (fun x ->
           fe "  %s" (static_field_str x));
         pe "}";
-        fe "let parse_%s_error buf : %s_error_content =" (snake_cased err_name) (snake_cased err_name);
+        fe "let parse_%s_error buf at : %s_error =" (snake_cased err_name) (snake_cased err_name);
         let offset = ref 4 in
         error.P2_fields.er_fields |> List.iter (function
           | `Pad Parser.{ pd_pad = `Bytes b; _ } ->
@@ -361,7 +361,7 @@ let generate out (ext : P2_fields.extension) =
             offset := !offset + b
           | `Field (name, P1_resolve.Prim (Types.Prim p)) ->
             let len = prim_len p in
-            fe "  let %s = %s buf %d in" (identifier name) (prim_get p) !offset;
+            fe "  let %s = %s buf (at + %d) in" (identifier name) (prim_get p) !offset;
             offset := !offset + len
           | _ ->
             fe "(* UNSUPPORTED FIELD *)"
@@ -374,8 +374,8 @@ let generate out (ext : P2_fields.extension) =
         );
         pe "}"
       ) else (
-        fe "type %s_error_content = unit" (snake_cased err_name);
-        fe "let parse_%s_error _ : %s_error_content = ()" (snake_cased err_name) (snake_cased err_name)
+        fe "type %s_error = unit" (snake_cased err_name);
+        fe "let parse_%s_error _ _ : %s_error = ()" (snake_cased err_name) (snake_cased err_name)
       );
       fe "(* error alias n.%d *)" number
 
@@ -383,13 +383,13 @@ let generate out (ext : P2_fields.extension) =
     | `Error_alias (err_name, number, old) ->
       begin match old with
       | Types.Id n ->
-        fe "type %s_error_content = %s_error_content" (snake_cased err_name) (snake_cased n);
-        fe "let parse_%s_error : string -> %s_error_content =\n  parse_%s_error"
+        fe "type %s_error = %s_error" (snake_cased err_name) (snake_cased n);
+        fe "let parse_%s_error : string -> int -> %s_error =\n  parse_%s_error"
           (snake_cased err_name) (snake_cased err_name) (snake_cased n)
       | Types.Ext_id (e, n) ->
-        fe "type %s_error_content = %s.%s_error_content" (snake_cased err_name)
+        fe "type %s_error = %s.%s_error" (snake_cased err_name)
           (caml_cased e) (snake_cased n);
-        fe "let parse_%s_error : string -> %s_error_content =\n  %s.parse_%s_error"
+        fe "let parse_%s_error : string -> int -> %s_error =\n  %s.parse_%s_error"
           (snake_cased err_name) (snake_cased err_name) (caml_cased e) (snake_cased n)
       end;
       fe "(* error n.%d *)" number
@@ -402,15 +402,25 @@ let generate out (ext : P2_fields.extension) =
   let errors = List.filter (function `Error _ | `Error_alias _ -> true | _ -> false) ext.declarations in
   if errors <> [] then begin
     pe "type errors = [";
-    ext.declarations |> List.iter begin function
-      | `Error (err_name, _, _) ->
-        fe "  | `%s of %s_error_content" (caml_cased err_name) (snake_cased err_name)
+    errors |> List.iter begin function
+      | `Error (err_name, _, _)
       | `Error_alias (err_name, _, _) ->
-        fe "  | `%s of %s_error_content" (caml_cased err_name) (snake_cased err_name)
+        fe "  | `%s of %s_error" (caml_cased err_name) (snake_cased err_name)
       | _ ->
-        ()
+        assert false
     end;
-    pe "]"
+    pe "]";
+    pe "let parse_errors buf at : int -> errors option = function";
+    errors |> List.iter begin function
+      | `Error (err_name, number, _)
+      | `Error_alias (err_name, number, _) ->
+        fe "  | %d ->" number;
+        fe "    let err = parse_%s_error buf at in" (snake_cased err_name);
+        fe "    Some (`%s err)" (caml_cased err_name);
+      | _ ->
+        assert false
+    end;
+    pe "  | _ -> None"
   end;
   pe "end";
   pn ()

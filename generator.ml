@@ -1,28 +1,42 @@
+let last_of_acronym name pos len =
+  if pos < len - 1 then
+    let next = name.[pos + 1] in
+    (next < '0' || next > '9')
+      && Char.lowercase_ascii next = next
+  else
+    false
+
+
+let snek name =
+  let buf = Buffer.create 16 in
+  let len = String.length name in
+  StringLabels.iteri name ~f:(fun i -> function
+    | c when i = 0 ->
+      Buffer.add_char buf (Char.lowercase_ascii c)
+
+    | 'A' .. 'Z' as c ->
+      let prev = name.[i - 1] in
+      if prev <> '_' &&
+        (Char.lowercase_ascii prev = prev || last_of_acronym name i len)
+      then
+        Buffer.add_char buf '_';
+      Buffer.add_char buf (Char.lowercase_ascii c)
+
+    | c ->
+      Buffer.add_char buf c
+  );
+  Buffer.contents buf
+
+
 let snake_cased name =
-  if String.uppercase_ascii name = name then
-    (* The string is already snake_cased, just make sure it's lowercase. *)
+  if name = "DECnet" then
+    "decnet"
+  else if String.lowercase_ascii name = name then
+    name
+  else if String.uppercase_ascii name = name then
     String.lowercase_ascii name
   else
-    (* The string is CamelCased. *)
-    let buf = Buffer.create 16 in
-    StringLabels.iteri name ~f:(fun i -> function
-      | c when i = 0 ->
-        Buffer.add_char buf (Char.lowercase_ascii c)
-      | 'A' .. 'Z' as c ->
-        (* We want to make sure something like GLXContext is turned into
-           glxcontext and not g_l_x_context.
-           We can't turn it into glx_context because then DECnet would become
-           de_cnet. *)
-        let prev = name.[i - 1] in
-        if prev <> '_' && Char.lowercase_ascii prev = prev then (
-          Buffer.add_char buf '_';
-          Buffer.add_char buf (Char.lowercase_ascii c)
-        ) else
-          Buffer.add_char buf (Char.lowercase_ascii c)
-      | c ->
-        Buffer.add_char buf c
-    );
-    Buffer.contents buf
+    snek name
 
 
 let%test "ccase" =
@@ -38,13 +52,19 @@ let%test "CamelCase" =
   snake_cased "StaticGray" = "static_gray"
 
 let%test "weird case 1" =
-  snake_cased "GLXContext" = "glxcontext"
+  snake_cased "GLXContext" = "glx_context"
 
 let%test "weird case 2" =
   snake_cased "DECnet" = "decnet"
 
 let%test "weird case 3" =
-  snake_cased "Positive_HSync" = "positive_hsync"
+  snake_cased "Positive_HSync" = "positive_h_sync"
+
+let%test "weird case 4" =
+  snake_cased "DRI2Buffer" = "dri2_buffer"
+
+let%test "weird case 5" =
+  snake_cased "TestStriGS" = "test_stri_gs"
 
 
 let caml_cased name =

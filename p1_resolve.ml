@@ -2,13 +2,12 @@
 Pass 1, in which we resolve all that can be resolved.
 *)
 
-module X = Parser
 module T = Types
 
 (* Some types *)
 type expression =
-  [ `Binop of X.binop * expression * expression
-  | `Unop of X.unop * expression
+  [ `Binop of Parser.binop * expression * expression
+  | `Unop of Parser.unop * expression
   | `Field_ref of string
   | `Param_ref of string * T.x_type
   | `Enum_ref of T.ident * string
@@ -26,7 +25,7 @@ type field_type =
   | Mask_or of T.ident * T.x_type
 
 type static_field =
-  [ `Pad of X.padding
+  [ `Pad of Parser.padding
   | `Field of string * field_type
   | `List of string * field_type * expression
   | `File_descriptor of string ]
@@ -45,14 +44,14 @@ type cond =
   | `Eq of expression ]
 
 type switch =
-  { sw_align : X.required_start_align option
+  { sw_align : Parser.required_start_align option
   ; sw_cond  : cond
   ; sw_cases : case list }
 
 and case =
   { cs_exprs  : expression list
   ; cs_name   : string option
-  ; cs_align  : X.required_start_align option
+  ; cs_align  : Parser.required_start_align option
   ; cs_fields : static_field list
   ; cs_switch : (string * switch) option }
 
@@ -60,16 +59,16 @@ and case =
 (* Structs *)
 type event =
   { ev_no_sequence_number : bool
-  ; ev_align  : X.required_start_align option
+  ; ev_align  : Parser.required_start_align option
   ; ev_fields : static_field list }
 
 type generic_event =
   { gev_no_sequence_number : bool
-  ; gev_align  : X.required_start_align option
+  ; gev_align  : Parser.required_start_align option
   ; gev_fields : dynamic_field list }
 
 type error =
-  { er_align  : X.required_start_align option
+  { er_align  : Parser.required_start_align option
   ; er_fields : static_field list }
 
 type struct_fields =
@@ -77,12 +76,12 @@ type struct_fields =
   ; sf_switch : (string * switch) option }
 
 type request_fields =
-  { rf_align  : X.required_start_align option
+  { rf_align  : Parser.required_start_align option
   ; rf_fields : request_field list
   ; rf_switch : (string * switch) option }
 
 type reply =
-  { re_align  : X.required_start_align option
+  { re_align  : Parser.required_start_align option
   ; re_fields : dynamic_field list
   ; re_switch : (string * switch) option }
 
@@ -97,7 +96,7 @@ include Pass.Make(struct
 
 
   type common_p0_p1 =
-    [ `Enum of string * X.enum ]
+    [ `Enum of string * Parser.enum ]
 
   type declaration =
     [ common_p0_p1
@@ -121,7 +120,7 @@ include Pass.Make(struct
 
 
   (* Boilerplate *)
-  let rec resolve_in_expr ext : X.expression -> expression = function
+  let rec resolve_in_expr ext : Parser.expression -> expression = function
     | `Param_ref (n, t) ->
       let t = Cache.lookup_type ext t in
       `Param_ref (n, t)
@@ -151,7 +150,7 @@ include Pass.Make(struct
       e
 
 
-  let resolve_field_type ext X.{ ft_allowed; ft_type } =
+  let resolve_field_type ext Parser.{ ft_allowed; ft_type } =
     let typ = Cache.lookup_type ext ft_type in
     match ft_allowed with
     | Some (`Enum name) ->
@@ -175,7 +174,7 @@ include Pass.Make(struct
 
 
   (* A bit of boilerplate for the static/dynamic/request fields *)
-  let resolve_in_static_field ext : X.static_field -> static_field = function
+  let resolve_in_static_field ext : Parser.static_field -> static_field = function
     | `Field (name, t) ->
       let t = resolve_field_type ext t in
       `Field (name, t)
@@ -186,24 +185,24 @@ include Pass.Make(struct
     | `Pad _ | (`File_descriptor _) as f ->
       f
 
-  let resolve_in_dynamic_field ext : X.dynamic_field -> dynamic_field = function
+  let resolve_in_dynamic_field ext : Parser.dynamic_field -> dynamic_field = function
     | `List_var (name, t) ->
       let t = resolve_field_type ext t in
       `List_var (name, t)
-    | #X.static_field as f ->
+    | #Parser.static_field as f ->
       (resolve_in_static_field ext f :> dynamic_field)
 
-  let resolve_in_request_field ext : X.request_field -> request_field = function
+  let resolve_in_request_field ext : Parser.request_field -> request_field = function
     | `Expr (name, t, expr) ->
       let t = resolve_field_type ext t in
       let expr = resolve_in_expr ext expr in
       `Expr (name, t, expr)
-    | #X.dynamic_field as f ->
+    | #Parser.dynamic_field as f ->
       (resolve_in_dynamic_field ext f :> request_field)
 
 
   (* Boilerplate for switch/case *)
-  let resolve_in_cond ext : X.cond -> cond = function
+  let resolve_in_cond ext : Parser.cond -> cond = function
     | `Bit_and expr ->
       let expr = resolve_in_expr ext expr in
       `Bit_and expr
@@ -211,13 +210,13 @@ include Pass.Make(struct
       let expr = resolve_in_expr ext expr in
       `Eq expr
 
-  let rec resolve_in_switch ext : X.switch -> switch =
+  let rec resolve_in_switch ext : Parser.switch -> switch =
     fun { sw_align; sw_cond; sw_cases } ->
       let sw_cases = List.map (resolve_in_case ext) sw_cases in
       let sw_cond = resolve_in_cond ext sw_cond in
       { sw_align; sw_cond; sw_cases }
 
-  and resolve_in_case ext : X.case -> case =
+  and resolve_in_case ext : Parser.case -> case =
     fun { cs_exprs; cs_name; cs_align; cs_fields; cs_switch } ->
       let cs_fields = List.map (resolve_in_static_field ext) cs_fields in
       let cs_switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) cs_switch in
@@ -227,34 +226,34 @@ include Pass.Make(struct
 
   (* Boilerplate for events/errors/requests. This would be so much cleaner
      with row types... *)
-  let resolve_in_event ext : X.event -> event =
+  let resolve_in_event ext : Parser.event -> event =
     fun { ev_no_sequence_number; ev_align; ev_fields } ->
       let ev_fields = List.map (resolve_in_static_field ext) ev_fields in
       { ev_no_sequence_number; ev_align; ev_fields }
 
-  let resolve_in_generic_event ext : X.generic_event -> generic_event =
+  let resolve_in_generic_event ext : Parser.generic_event -> generic_event =
     fun { gev_no_sequence_number; gev_align; gev_fields } ->
       let gev_fields = List.map (resolve_in_dynamic_field ext) gev_fields in
       { gev_no_sequence_number; gev_align; gev_fields }
 
-  let resolve_in_error ext : X.error -> error =
+  let resolve_in_error ext : Parser.error -> error =
     fun { er_align; er_fields } ->
       let er_fields = List.map (resolve_in_static_field ext) er_fields in
       { er_align; er_fields }
 
-  let resolve_in_struct_fields ext : X.struct_fields -> struct_fields =
+  let resolve_in_struct_fields ext : Parser.struct_fields -> struct_fields =
     fun { sf_fields; sf_switch } ->
       let sf_fields = List.map (resolve_in_static_field ext) sf_fields in
       let sf_switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) sf_switch in
       { sf_fields; sf_switch }
 
-  let resolve_in_request_fields ext : X.request_fields -> request_fields =
-    fun ({ rf_align; rf_fields; rf_switch } : X.request_fields) ->
+  let resolve_in_request_fields ext : Parser.request_fields -> request_fields =
+    fun ({ rf_align; rf_fields; rf_switch } : Parser.request_fields) ->
       let rf_fields = List.map (resolve_in_request_field ext) rf_fields in
       let rf_switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) rf_switch in
       { rf_align; rf_fields; rf_switch }
 
-  let resolve_in_reply ext : X.reply -> reply =
+  let resolve_in_reply ext : Parser.reply -> reply =
     fun { re_align; re_fields; re_switch } ->
       let re_fields = List.map (resolve_in_dynamic_field ext) re_fields in
       let re_switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) re_switch in
@@ -307,7 +306,7 @@ include Pass.Make(struct
       `Error_alias (name, no, old)
 
     | `Event_struct (name, evs) ->
-      let resolve X.{ aev_extension; aev_opcode_range = (min, max) } =
+      let resolve Parser.{ aev_extension; aev_opcode_range = (min, max) } =
         List.init (max - min + 1) (fun n -> n + 1)
         |> List.map (fun n -> n + min - 1)
         |> List.map (Cache.event_name_from_no ext aev_extension)

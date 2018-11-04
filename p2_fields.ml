@@ -104,8 +104,7 @@ include Pass.Make(struct
      so I guess we'll have to support them, but I'll leave them out for now
      because I don't feel like thinking much.
   *)
-  let rec expr_stuff (n : res) : Prev.expression -> res =
-    function
+  let rec expr_stuff (n : res) : Prev.expression -> res = function
     | `Binop (_, e1, e2) ->
       let n = expr_stuff n e1 in
       expr_stuff n e2
@@ -146,6 +145,8 @@ include Pass.Make(struct
         acc
     ) fields fields
 
+
+  (* Turn file descriptor fields into normal fields with fd type *)
   let del_fd_static : Prev.static_field -> static_field = function
     | `File_descriptor name ->
       `Field (name, Prev.Prim (Types.Prim Prim.Fd))
@@ -158,6 +159,7 @@ include Pass.Make(struct
   let del_fd_request : Prev.request_field -> request_field = function
     | `Expr _ as d -> d
     | #Prev.dynamic_field as d -> (del_fd_dynamic d :> request_field)
+
 
   let in_static_fields (fields : Prev.static_field list) : static_field list =
     let fields = List.map del_fd_static fields in

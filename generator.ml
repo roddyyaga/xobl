@@ -14,7 +14,7 @@ let snake_cased name =
            We can't turn it into glx_context because then DECnet would become
            de_cnet. *)
         let prev = name.[i - 1] in
-        if Char.lowercase_ascii prev = prev then (
+        if prev <> '_' && Char.lowercase_ascii prev = prev then (
           Buffer.add_char buf '_';
           Buffer.add_char buf (Char.lowercase_ascii c)
         ) else
@@ -25,13 +25,35 @@ let snake_cased name =
     Buffer.contents buf
 
 
+let%test "ccase" =
+  snake_cased "bigreq" = "bigreq"
+
+let%test "UPPERCASE" =
+  snake_cased "CHAR2B" = "char2b"
+
+let%test "snake_case" =
+  snake_cased "bits_per_rgb_value" = "bits_per_rgb_value"
+
+let%test "CamelCase" =
+  snake_cased "StaticGray" = "static_gray"
+
+let%test "weird case 1" =
+  snake_cased "GLXContext" = "glxcontext"
+
+let%test "weird case 2" =
+  snake_cased "DECnet" = "decnet"
+
+let%test "weird case 3" =
+  snake_cased "Positive_HSync" = "positive_hsync"
+
+
 let caml_cased name =
   String.capitalize_ascii (snake_cased name)
 
 
 let variant name =
   if name.[0] >= '0' && name.[0] <= '9' then
-    "V" ^ snake_cased name
+    "_" ^ snake_cased name
   else
     caml_cased name
 

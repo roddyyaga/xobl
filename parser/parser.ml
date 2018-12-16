@@ -1,74 +1,5 @@
 open Util
 
-
-module Attr = struct
-  (* The "_o" suffix represents an attribute that may not be present  *)
-
-  let str attrs x =
-    List.assoc x attrs
-
-  let str_o attrs x =
-    List.assoc_opt x attrs
-
-  let int attrs x =
-    str attrs x |> int_of_string
-
-  let int_o attrs x =
-    str_o attrs x
-    |> Option.map int_of_string
-
-  let bool_o attrs x =
-    str_o attrs x
-    |> Option.map bool_of_string
-
-  (* Attributes that are false by default *)
-  let bool_f attrs x =
-    bool_o attrs x
-    |> Option.with_default false
-
-  (* Attributes that are true by default *)
-  let bool_t attrs x =
-    bool_o attrs x
-    |> Option.with_default true
-end
-
-
-module Xml = struct
-  type attr = string * string
-
-  type el =
-    string * attr list * t list
-
-  and t =
-    | E of el
-    | D of string
-
-  let parse_file fname =
-    let inp = open_in fname in
-    try
-      let xml_inp = Xmlm.make_input ~strip:true (`Channel inp) in
-      let el ((_, name), attrs) childs =
-        E (name, (List.map (fun ((_, n), v) -> (n, v)) attrs), childs)
-      in
-      let data str = D str in
-      let (_, x) = Xmlm.input_doc_tree ~el ~data xml_inp in
-      close_in inp;
-      x
-    with exn ->
-      close_in inp;
-      raise exn
-end
-
-
-exception Unexpected of string
-
-let fail_unexpected str =
-  raise (Unexpected str)
-
-let fail_unexpectedf fmt =
-  Printf.ksprintf fail_unexpected fmt
-
-
 (* ********** Padding and alignment ********** *)
 type pad =
   [ `Bytes of int
@@ -112,7 +43,7 @@ let consume_align = function
 type doc = unit
 
 let consume_doc : Xml.t list -> doc option * Xml.t list =
-  List'.extract (function
+  list_pry (function
     | Xml.E ("doc", _, _) -> Some ()
     | _ -> None
   )
@@ -429,7 +360,7 @@ and case_of_xml name fields =
 
 
 let consume_switch =
-  List'.extract (function
+  list_pry (function
     | Xml.E ("switch", ["name", name], fields) ->
       let switch = switch_of_xml fields in
       Some (name, switch)

@@ -156,18 +156,18 @@ let x_type_str = function
 
 let field_type_str =
   let open P1_resolve in function
-    | Prim t ->
-      x_type_str t
-    | Enum (e, t) ->
-      (ident_part_str e) ^ "_enum (* " ^ (x_type_str t) ^ " *)"
-    | Mask (e, t) ->
-      (ident_part_str e) ^ "_mask (* " ^ (x_type_str t) ^ " *)"
-    | Enum_or (e, t) ->
-      Printf.sprintf "(%s, %s_enum) either"
-        (x_type_str t) (ident_part_str e)
-    | Mask_or (e, t) ->
-      Printf.sprintf "(%s, %s_mask) either"
-        (x_type_str t) (ident_part_str e)
+  | Prim t ->
+    x_type_str t
+  | Enum (e, t) ->
+    (ident_part_str e) ^ "_enum (* " ^ (x_type_str t) ^ " *)"
+  | Mask (e, t) ->
+    (ident_part_str e) ^ "_mask (* " ^ (x_type_str t) ^ " *)"
+  | Enum_or (e, t) ->
+    Printf.sprintf "(%s, %s_enum) either"
+      (x_type_str t) (ident_part_str e)
+  | Mask_or (e, t) ->
+    Printf.sprintf "(%s, %s_mask) either"
+      (x_type_str t) (ident_part_str e)
 
 
 let padding_str : Parser.padding -> string = function
@@ -341,6 +341,7 @@ let generate out (ext : P2_fields.extension) =
 
 
     | `Union (name, fields) ->
+      pe "(* union *)";
       fe "type %s = {" (identifier name);
       List.iter (fun x -> pe ("  " ^ static_field_str x)) fields;
       pe "}"

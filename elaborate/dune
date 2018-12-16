@@ -1,0 +1,6 @@
+(library
+ (name xobl_elaborate)
+ (libraries containers xobl_parser)
+ (inline_tests
+  (deps (glob_files ../xproto/src/*.xml)))
+ (preprocess (pps ppx_inline_test)))

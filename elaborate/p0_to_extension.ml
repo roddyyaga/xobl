@@ -1,3 +1,5 @@
+module Parser = Xobl_parser.Parser
+
 type declaration =
   [ `X_id of string
   | `X_id_union of string * string list

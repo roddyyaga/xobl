@@ -1,3 +1,4 @@
+module Parser = Xobl_parser.Parser
 module Prev = P1_resolve
 
 type static_field =
@@ -181,7 +182,7 @@ include Pass.Make(struct
     ; sw_cases = cases }
 
   and in_case (cs : Prev.case) =
-    let switch = Option.map (fun (n, sw) -> (n, in_switch sw)) cs.cs_switch in
+    let switch = CCOpt.map (fun (n, sw) -> (n, in_switch sw)) cs.cs_switch in
     let fields = in_static_fields cs.cs_fields in
     { cs_exprs  = cs.cs_exprs
     ; cs_name   = cs.cs_name
@@ -197,7 +198,7 @@ include Pass.Make(struct
 
     | `Struct (name, { sf_fields; sf_switch }) ->
       let sf_fields = in_static_fields sf_fields in
-      let sf_switch = sf_switch |> Option.map (fun (sw_n, sw) -> (sw_n, in_switch sw)) in
+      let sf_switch = sf_switch |> CCOpt.map (fun (sw_n, sw) -> (sw_n, in_switch sw)) in
       `Struct (name, { sf_fields; sf_switch })
 
     | `Event (name, no, ev) ->
@@ -227,16 +228,16 @@ include Pass.Make(struct
       `Error (name, no, er)
 
     | `Request (name, no, req) ->
-      let reply = req.rq_reply |> Option.map (fun (re : Prev.reply) ->
+      let reply = req.rq_reply |> CCOpt.map (fun (re : Prev.reply) ->
         let fields = in_dynamic_fields re.re_fields in
-        let switch = re.re_switch |> Option.map (fun (n, sw) -> (n, in_switch sw)) in
+        let switch = re.re_switch |> CCOpt.map (fun (n, sw) -> (n, in_switch sw)) in
         { re_align = re.re_align
         ; re_fields = fields
         ; re_switch = switch }
       ) in
       let params =
         let fields = in_request_fields req.rq_params.rf_fields in
-        let switch = req.rq_params.rf_switch |> Option.map (fun (n, sw) -> (n, in_switch sw)) in
+        let switch = req.rq_params.rf_switch |> CCOpt.map (fun (n, sw) -> (n, in_switch sw)) in
         { rf_align = req.rq_params.rf_align
         ; rf_fields = fields
         ; rf_switch = switch }

@@ -1,4 +1,15 @@
-open Util
+let string_split chr str =
+  let len = String.length str in
+  let rec pos i =
+    if i >= len then
+      None
+    else if str.[i] = chr then
+      let left = StringLabels.sub str ~pos:0 ~len:i in
+      let right = StringLabels.sub str ~pos:(i + 1) ~len:(len - i - 1) in
+      Some (left, right)
+    else
+      pos (i + 1)
+  in pos 0
 
 
 type 'a table =
@@ -9,40 +20,63 @@ type 'a table =
 let add_to_table tbl ext name refs =
   tbl := { ext; name; refs } :: !tbl
 
-let lookup tbl (update : 'a -> 'a) used_ext name =
-  let get name ext t = t.name = name && t.ext = ext in
-  String'.split ':' name
-  |> Option.map (fun (ext, name) ->
-      let item = List.find_opt (get name ext) !tbl in
-      let item = match item with None -> invalid_arg name | Some i -> i in
-      item.refs <- update item.refs;
-      if used_ext.Types.file_name = ext then
-        Types.Id name
-      else
-        Types.Ext_id (ext, name)
+
+module Lookup = struct
+  (* Helpers *)
+  let by name ext_fname t =
+    t.name = name && t.ext = ext_fname
+
+  let find_opt tbl name ext_fname =
+    List.find_opt (by name ext_fname) !tbl
+    |> CCOpt.map (fun item -> (ext_fname, name, item))
+
+  let find tbl name ext_fname =
+    match find_opt tbl name ext_fname with
+    | Some i -> i
+    | None -> Format.ksprintf invalid_arg "%s:%s" ext_fname name
+
+
+  let find_qualified tbl name =
+    string_split ':' name
+    |> CCOpt.map (fun (ext_fname, name) -> find tbl name ext_fname)
+
+  let find_in_ext tbl name ext =
+    find_opt tbl name ext.Types.file_name
+
+  let find_in_imports tbl name ext =
+    ext.Types.imports
+    |> CCList.find_map (find_opt tbl name)
+
+
+  let find_name tbl name ext =
+    find_qualified tbl name
+    |> CCOpt.or_lazy ~else_:(fun () ->
+      find_in_ext tbl name ext
     )
-  |> Option.or_lazy (lazy (
-      List.find_opt (get name used_ext.Types.file_name) !tbl
-      |> Option.map (fun item ->
-          item.refs <- update item.refs;
-          Types.Id name
-        )
-    ))
-  |> Option.with_default_lazy (lazy (
-      used_ext.Types.imports |> List'.first_exn (fun ext ->
-        List.find_opt (get name ext) !tbl
-        |> Option.map (fun item ->
-            item.refs <- update item.refs;
-            Types.Ext_id (ext, name)
-          )
-    )))
+    |> CCOpt.or_lazy ~else_:(fun () ->
+      find_in_imports tbl name ext
+    )
+    |> CCOpt.get_lazy (fun () ->
+      invalid_arg name
+    )
+
+  let lookup tbl (update : 'a -> 'a) used_ext name =
+    let ext, name, item =
+      find_name tbl name used_ext
+    in
+    item.refs <- update item.refs;
+    if used_ext.Types.file_name = ext then
+      Types.Id name
+    else
+      Types.Ext_id (ext, name)
+end
 
 
 (* Types *)
 let type_table : int table list ref = ref []
 
 let lookup_type_id used_ext name =
-  lookup type_table (fun x -> x + 1) used_ext name
+  Lookup.lookup type_table (fun x -> x + 1) used_ext name
 
 let lookup_type used_ext name =
   match Prim.of_string name with
@@ -60,7 +94,7 @@ let lookup_enum ext x =
     | `Enum -> { enums = enums + 1; masks }
     | `Mask -> { masks = masks + 1; enums }
   in
-  lookup enum_table f ext
+  Lookup.lookup enum_table f ext
 
 let enum_refs ext name =
   let e = List.find (fun x -> x.ext = ext && x.name = name) !enum_table in
@@ -72,13 +106,13 @@ let event_table : unit table list ref = ref []
 
 let lookup_event ext =
   let f () = () in
-  lookup event_table f ext
+  Lookup.lookup event_table f ext
 
 let error_table : unit table list ref = ref []
 
 let lookup_error ext =
   let f () = () in
-  lookup error_table f ext
+  Lookup.lookup error_table f ext
 
 
 type event_no =
@@ -93,7 +127,7 @@ let event_no_table : event_no list ref = ref []
 let event_name_from_no curr_ext ext no =
   let find ev = ev.ev_ext = ext && ev.ev_number = no in
   List.find_opt find !event_no_table
-  |> Option.map (fun ev ->
+  |> CCOpt.map (fun ev ->
     if curr_ext.Types.file_name = ext then
       Types.Id ev.ev_name
     else

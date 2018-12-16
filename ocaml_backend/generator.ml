@@ -1,81 +1,12 @@
-let last_of_acronym name pos len =
-  if pos < len - 1 then
-    let next = name.[pos + 1] in
-    (next < '0' || next > '9')
-      && Char.lowercase_ascii next = next
-  else
-    false
-
-
-let snek name =
-  let buf = Buffer.create 16 in
-  let len = String.length name in
-  StringLabels.iteri name ~f:(fun i -> function
-    | c when i = 0 ->
-      Buffer.add_char buf (Char.lowercase_ascii c)
-
-    | 'A' .. 'Z' as c ->
-      let prev = name.[i - 1] in
-      if prev <> '_' &&
-        (Char.lowercase_ascii prev = prev || last_of_acronym name i len)
-      then
-        Buffer.add_char buf '_';
-      Buffer.add_char buf (Char.lowercase_ascii c)
-
-    | c ->
-      Buffer.add_char buf c
-  );
-  Buffer.contents buf
-
-
-let snake_cased name =
-  if name = "DECnet" then
-    "decnet"
-  else if String.lowercase_ascii name = name then
-    name
-  else if String.uppercase_ascii name = name then
-    String.lowercase_ascii name
-  else
-    snek name
-
-
-let%test "ccase" =
-  snake_cased "bigreq" = "bigreq"
-
-let%test "UPPERCASE" =
-  snake_cased "CHAR2B" = "char2b"
-
-let%test "snake_case" =
-  snake_cased "bits_per_rgb_value" = "bits_per_rgb_value"
-
-let%test "CamelCase" =
-  snake_cased "StaticGray" = "static_gray"
-
-let%test "weird case 1" =
-  snake_cased "GLXContext" = "glx_context"
-
-let%test "weird case 2" =
-  snake_cased "DECnet" = "decnet"
-
-let%test "weird case 3" =
-  snake_cased "Positive_HSync" = "positive_h_sync"
-
-let%test "weird case 4" =
-  snake_cased "DRI2Buffer" = "dri2_buffer"
-
-let%test "weird case 5" =
-  snake_cased "TestStriGS" = "test_stri_gs"
-
-
-let caml_cased name =
-  String.capitalize_ascii (snake_cased name)
+open Xobl_parser
+open Xobl_elaborate
 
 
 let variant name =
   if name.[0] >= '0' && name.[0] <= '9' then
-    "_" ^ snake_cased name
+    "_" ^ Casing.snake name
   else
-    caml_cased name
+    Casing.caml name
 
 let ocaml_reserved =
   [ "and"; "as"; "asr"; "assert"; "begin"; "class"; "constraint"; "do"; "done"
@@ -88,7 +19,7 @@ let ocaml_reserved =
 
 
 let identifier name =
-  let name = snake_cased name in
+  let name = Casing.snake name in
   if List.mem name ocaml_reserved then
     name ^ "_"
   else
@@ -98,13 +29,13 @@ let identifier name =
 let ident_str = function
   | Types.Id n -> identifier n
   | Types.Ext_id (e, n) ->
-    caml_cased e ^ "." ^ identifier n
+    Casing.caml e ^ "." ^ identifier n
 
 
 let ident_part_str = function
-  | Types.Id n -> snake_cased n
+  | Types.Id n -> Casing.snake n
   | Types.Ext_id (e, n) ->
-    caml_cased e ^ "." ^ snake_cased n
+    Casing.caml e ^ "." ^ Casing.snake n
 
 
 
@@ -216,7 +147,7 @@ let rec expression_str : P1_resolve.expression -> string =
   | `Param_ref (n, _) ->
     identifier n ^ " (* param *)"
   | `Enum_ref (_en, i) ->
-    "`" ^ (caml_cased i)
+    "`" ^ (Casing.caml i)
   | `Sum_of (f, e) ->
     begin match e with
     | None ->
@@ -266,13 +197,13 @@ let generate out (ext : P2_fields.extension) =
   let pn () = output_char out '\n' in
 
   pe "(*****************************************************************************)";
-  fe "module %s = struct" (caml_cased ext.file_name);
+  fe "module %s = struct" (Casing.caml ext.file_name);
   pe "(*****************************************************************************)";
   (* pe "open X11_base";*)
 
-  ext.version |> Option.iter (fun (maj, min) ->
+  ext.version |> CCOpt.iter (fun (maj, min) ->
     fe "let version = (%d, %d)" maj min);
-  ext.query_name |> Option.iter (fun n ->
+  ext.query_name |> CCOpt.iter (fun n ->
     fe "let query_extension_name = %S" n);
   pn ();
 
@@ -303,7 +234,7 @@ let generate out (ext : P2_fields.extension) =
           functions)
       *)
       let refs = Cache.enum_refs ext.file_name name in
-      let ident = snake_cased name in
+      let ident = Casing.snake name in
 
       if List.length en_vals > 0 then begin
         if List.length en_bits > 0 then
@@ -348,7 +279,7 @@ let generate out (ext : P2_fields.extension) =
 
 
     | `Struct (struct_name, s) ->
-      Option.iter (fun (field_name, sw) ->
+      CCOpt.iter (fun (field_name, sw) ->
         let open P2_fields in
         let cases =
           sw.sw_cases |> List.map (fun case ->
@@ -360,10 +291,10 @@ let generate out (ext : P2_fields.extension) =
               | `Enum_ref (enum, item) -> enum, item
               | _ -> assert false
             in
-            let name = Option.with_default item case.cs_name in
+            let name = CCOpt.get_or ~default:item case.cs_name in
             assert (case.cs_switch = None);
             let t_name = Printf.sprintf "%s_%s_%s_case"
-              (snake_cased struct_name) (snake_cased field_name) (snake_cased name)
+              (Casing.snake struct_name) (Casing.snake field_name) (Casing.snake name)
             in
             fe "type %s = {" t_name;
             List.iter (fun x -> pe ("  " ^ (static_field_str x))) case.cs_fields;
@@ -371,7 +302,7 @@ let generate out (ext : P2_fields.extension) =
             (name, t_name)
           )
         in
-        fe "type %s_%s_switch = [" (snake_cased struct_name) (snake_cased field_name);
+        fe "type %s_%s_switch = [" (Casing.snake struct_name) (Casing.snake field_name);
         List.iter (fun (name, t_name) ->
           fe "  | `%s of %s" (variant name) t_name
         ) cases;
@@ -381,9 +312,9 @@ let generate out (ext : P2_fields.extension) =
         fe "type %s = {" (identifier struct_name);
         s.P2_fields.sf_fields |> List.iter (fun x ->
           fe "  %s" (static_field_str x));
-        s.P2_fields.sf_switch |> Option.iter (fun (field_name, _sw) ->
+        s.P2_fields.sf_switch |> CCOpt.iter (fun (field_name, _sw) ->
           fe "  %s : %s_%s_switch;"
-            (identifier field_name) (snake_cased struct_name) (snake_cased field_name)
+            (identifier field_name) (Casing.snake struct_name) (Casing.snake field_name)
         );
         pe "}"
       end else
@@ -392,11 +323,11 @@ let generate out (ext : P2_fields.extension) =
 
     | `Error (err_name, number, error) ->
       if List.length (List.filter (function `List_length _ | `Pad _ -> false | _ -> true) error.P2_fields.er_fields) > 0 then (
-        fe "type %s_error = {" (snake_cased err_name);
+        fe "type %s_error = {" (Casing.snake err_name);
         error.P2_fields.er_fields |> List.iter (fun x ->
           fe "  %s" (static_field_str x));
         pe "}";
-        fe "let parse_%s_error buf at : %s_error =" (snake_cased err_name) (snake_cased err_name);
+        fe "let parse_%s_error buf at : %s_error =" (Casing.snake err_name) (Casing.snake err_name);
         let offset = ref 4 in
         error.P2_fields.er_fields |> List.iter (function
           | `Pad Parser.{ pd_pad = `Bytes b; _ } ->
@@ -417,8 +348,8 @@ let generate out (ext : P2_fields.extension) =
         );
         pe "}"
       ) else (
-        fe "type %s_error = unit" (snake_cased err_name);
-        fe "let parse_%s_error _ _ : %s_error = ()" (snake_cased err_name) (snake_cased err_name)
+        fe "type %s_error = unit" (Casing.snake err_name);
+        fe "let parse_%s_error _ _ : %s_error = ()" (Casing.snake err_name) (Casing.snake err_name)
       );
       fe "(* error alias n.%d *)" number
 
@@ -426,14 +357,14 @@ let generate out (ext : P2_fields.extension) =
     | `Error_alias (err_name, number, old) ->
       begin match old with
       | Types.Id n ->
-        fe "type %s_error = %s_error" (snake_cased err_name) (snake_cased n);
+        fe "type %s_error = %s_error" (Casing.snake err_name) (Casing.snake n);
         fe "let parse_%s_error : string -> int -> %s_error =\n  parse_%s_error"
-          (snake_cased err_name) (snake_cased err_name) (snake_cased n)
+          (Casing.snake err_name) (Casing.snake err_name) (Casing.snake n)
       | Types.Ext_id (e, n) ->
-        fe "type %s_error = %s.%s_error" (snake_cased err_name)
-          (caml_cased e) (snake_cased n);
+        fe "type %s_error = %s.%s_error" (Casing.snake err_name)
+          (Casing.caml e) (Casing.snake n);
         fe "let parse_%s_error : string -> int -> %s_error =\n  %s.parse_%s_error"
-          (snake_cased err_name) (snake_cased err_name) (caml_cased e) (snake_cased n)
+          (Casing.snake err_name) (Casing.snake err_name) (Casing.caml e) (Casing.snake n)
       end;
       fe "(* error n.%d *)" number
 
@@ -448,7 +379,7 @@ let generate out (ext : P2_fields.extension) =
     errors |> List.iter begin function
       | `Error (err_name, _, _)
       | `Error_alias (err_name, _, _) ->
-        fe "  | `%s of %s_error" (caml_cased err_name) (snake_cased err_name)
+        fe "  | `%s of %s_error" (Casing.caml err_name) (Casing.snake err_name)
       | _ ->
         assert false
     end;
@@ -458,8 +389,8 @@ let generate out (ext : P2_fields.extension) =
       | `Error (err_name, number, _)
       | `Error_alias (err_name, number, _) ->
         fe "  | %d ->" number;
-        fe "    let err = parse_%s_error buf at in" (snake_cased err_name);
-        fe "    Some (`%s err)" (caml_cased err_name);
+        fe "    let err = parse_%s_error buf at in" (Casing.snake err_name);
+        fe "    Some (`%s err)" (Casing.caml err_name);
       | _ ->
         assert false
     end;

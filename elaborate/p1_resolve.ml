@@ -2,6 +2,7 @@
 Pass 1, in which we resolve all that can be resolved.
 *)
 
+module Parser = Xobl_parser.Parser
 module T = Types
 
 (* Some types *)
@@ -135,7 +136,7 @@ include Pass.Make(struct
       `Unop (op, e)
 
     | `Sum_of (x, e) ->
-      let e = Option.map (resolve_in_expr ext) e in
+      let e = CCOpt.map (resolve_in_expr ext) e in
       `Sum_of (x, e)
 
     | `Pop_count e ->
@@ -219,7 +220,7 @@ include Pass.Make(struct
   and resolve_in_case ext : Parser.case -> case =
     fun { cs_exprs; cs_name; cs_align; cs_fields; cs_switch } ->
       let cs_fields = List.map (resolve_in_static_field ext) cs_fields in
-      let cs_switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) cs_switch in
+      let cs_switch = CCOpt.map (fun (name, s) -> (name, resolve_in_switch ext s)) cs_switch in
       let cs_exprs = List.map (resolve_in_expr ext) cs_exprs in
       { cs_exprs; cs_name; cs_align; cs_fields; cs_switch }
 
@@ -244,19 +245,19 @@ include Pass.Make(struct
   let resolve_in_struct_fields ext : Parser.struct_fields -> struct_fields =
     fun { sf_fields; sf_switch } ->
       let sf_fields = List.map (resolve_in_static_field ext) sf_fields in
-      let sf_switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) sf_switch in
+      let sf_switch = CCOpt.map (fun (name, s) -> (name, resolve_in_switch ext s)) sf_switch in
       { sf_fields; sf_switch }
 
   let resolve_in_request_fields ext : Parser.request_fields -> request_fields =
     fun ({ rf_align; rf_fields; rf_switch } : Parser.request_fields) ->
       let rf_fields = List.map (resolve_in_request_field ext) rf_fields in
-      let rf_switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) rf_switch in
+      let rf_switch = CCOpt.map (fun (name, s) -> (name, resolve_in_switch ext s)) rf_switch in
       { rf_align; rf_fields; rf_switch }
 
   let resolve_in_reply ext : Parser.reply -> reply =
     fun { re_align; re_fields; re_switch } ->
       let re_fields = List.map (resolve_in_dynamic_field ext) re_fields in
-      let re_switch = Option.map (fun (name, s) -> (name, resolve_in_switch ext s)) re_switch in
+      let re_switch = CCOpt.map (fun (name, s) -> (name, resolve_in_switch ext s)) re_switch in
       { re_align; re_fields; re_switch }
 
 
@@ -294,7 +295,7 @@ include Pass.Make(struct
 
     | `Request (name, n, { rq_combine_adjacent; rq_params; rq_reply }) ->
       let rq_params = resolve_in_request_fields ext rq_params in
-      let rq_reply = Option.map (resolve_in_reply ext) rq_reply in
+      let rq_reply = CCOpt.map (resolve_in_reply ext) rq_reply in
       `Request (name, n, { rq_combine_adjacent; rq_params; rq_reply })
 
     | `Event_alias (name, no, old) ->
@@ -310,7 +311,7 @@ include Pass.Make(struct
         List.init (max - min + 1) (fun n -> n + 1)
         |> List.map (fun n -> n + min - 1)
         |> List.map (Cache.event_name_from_no ext aev_extension)
-        |> Util.List'.filter_map
+        |> CCList.keep_some
         |> List.rev
       in
       let evs = List.map resolve evs |> List.flatten in

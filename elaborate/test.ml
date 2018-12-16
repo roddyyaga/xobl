@@ -1,11 +1,11 @@
 module String_map = Types.String_map
 
 let resolve_extension_path name =
-  Filename.concat "xproto/src" (name ^ ".xml")
+  Filename.concat "../xproto/src" (name ^ ".xml")
 
-let load_extension file_name : Parser.protocol_file =
+let load_extension file_name : Xobl_parser.Parser.protocol_file =
   resolve_extension_path file_name
-  |> Parser.parse_file
+  |> Xobl_parser.Parser.parse_file
 
 let%test_unit "analyzer test" =
   let files =
@@ -25,8 +25,11 @@ let%test_unit "analyzer test" =
   in
   let exts = P1_resolve.pass exts in
   let exts = P2_fields.pass exts in
+  ignore exts
+  (*
   let out = open_out "stuffs.ml" in
   output_string out "open X11_base\n\n";
   String_map.iter exts ~f:(fun ~key:_ ~data:ext ->
     Generator.generate out ext
   )
+  *)

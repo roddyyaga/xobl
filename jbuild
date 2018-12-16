@@ -1,9 +1,0 @@
-(jbuild_version 1)
-
-(library
- ((name xobl_compiler)
-  (public_name xobl.internals)
-  (libraries (unix xmlm))
-  (inline_tests
-   ((deps ((glob_files xproto/src/*.xml)))))
-  (preprocess (pps (ppx_inline_test)))))

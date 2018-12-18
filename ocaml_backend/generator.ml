@@ -90,7 +90,7 @@ module Size = struct
     | `Event_alias (name, _, orig)
     | `Error_alias (name, _, orig) when name = id ->
       Some (of_ident ~exts ext_name orig)
-    
+
     | `Alias (name, typ) when name = id ->
       Some (of_x_type ~exts ext_name typ)
 

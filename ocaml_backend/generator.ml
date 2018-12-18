@@ -3,20 +3,40 @@ open Xobl_elaborate
 
 
 module Size = struct
-  let of_prim =
-    let open Prim in function
-    | Void -> 0
-    | Char | Byte | Bool | Int8 | Card8 -> 1
-    | Int16 | Card16 | Fd -> 2
-    | Int32 | Card32 | Float | Xid -> 4
-    | Card64 | Double -> 8
+  type t =
+    [ `Bounded of int
+    | `Unbounded of int  ]
 
-  let rec of_x_type ~exts ext_name : Types.x_type -> int =
+  module M = struct
+    let lift (f : int -> int -> int) (n : t) (m : t) : t =
+      match (n, m) with
+      | `Bounded n, `Bounded m -> `Bounded (f n m)
+      | `Bounded n, `Unbounded m
+      | `Unbounded n, `Bounded m
+      | `Unbounded n, `Unbounded m ->
+        `Unbounded (f n m)
+
+    let ( + ) = lift ( + )
+    let max = lift max
+  end
+
+  let to_int : t -> int = function
+    | `Bounded x | `Unbounded x -> x
+
+  let of_prim : Prim.t -> t =
+    let open Prim in function
+    | Void -> `Bounded 0
+    | Char | Byte | Bool | Int8 | Card8 -> `Bounded 1
+    | Int16 | Card16 | Fd -> `Bounded 2
+    | Int32 | Card32 | Float | Xid ->`Bounded  4
+    | Card64 | Double -> `Bounded 8
+
+  let rec of_x_type ~exts ext_name : Types.x_type -> t =
     let open Types in function
     | Prim t -> of_prim t
     | Ref id -> of_ident ~exts ext_name id
 
-  and of_ident ~exts ext_name ident : int =
+  and of_ident ~exts ext_name ident : t =
     let open Types in
     let ext_name, n = match ident with
       | Id n -> (ext_name, n)
@@ -29,63 +49,65 @@ module Size = struct
         ext_name n
     )
 
-  and of_pad : Parser.pad -> int = function
-    | `Bytes n -> n
-    | `Align _ -> 0
+  and of_pad : Parser.pad -> t = function
+    | `Bytes n -> `Bounded n
+    | `Align _ -> `Bounded 0
 
-  and of_padding : Parser.padding -> int =
+  and of_padding : Parser.padding -> t =
     fun Parser.{ pd_pad; _ } ->
       of_pad pd_pad
 
-  and of_field_type ~exts ext_name : P1_resolve.field_type -> int =
+  and of_field_type ~exts ext_name : P1_resolve.field_type -> t =
     let open P1_resolve in function
     | Prim t
     | Enum (_, t) | Mask (_, t)
     | Enum_or (_, t) | Mask_or (_, t) ->
       of_x_type ~exts ext_name t
 
-  and of_static_fields ~exts ext_name : P2_fields.static_field list -> int =
-    fun ls ->
-      ls |> List.map (function
-        | `Pad p -> of_padding p
-        | `Field (_, typ)
-        | `List_length (_, typ) -> of_field_type ~exts ext_name typ
-        | `List (name, _typ, _expr) ->
-          Format.ksprintf invalid_arg
-            "not implementing: trying to get size of list %s.%s"
-            ext_name name
-      )
-      |> List.fold_left ( + ) 0
+  and of_static_fields ~exts ext_name (ls : P2_fields.static_field list) : t =
+    ls |> List.map (function
+      | `Pad p -> of_padding p
+      | `Field (_, typ)
+      | `List_length (_, typ) -> of_field_type ~exts ext_name typ
+      | `List _ ->
+        `Unbounded 0
+    )
+    |> M.(List.fold_left ( + ) (`Bounded 0))
 
   and of_switch_field ~exts ext_name = function
     | Some (_, s) -> of_switch ~exts ext_name s
-    | None -> 0
+    | None -> `Bounded 0
 
-  and of_switch ~exts ext_name : P2_fields.switch -> int =
+  and of_switch ~exts ext_name : P2_fields.switch -> t =
     fun P2_fields.{ sw_cases; _ } ->
       List.fold_left
-        (fun acc x -> CCInt.max acc (of_case ~exts ext_name x)) 0
+        (fun acc x -> M.max acc (of_case ~exts ext_name x))
+        (`Bounded 0)
         sw_cases
 
-  and of_case ~exts ext_name : P2_fields.case -> int =
+  and of_case ~exts ext_name : P2_fields.case -> t =
     fun P2_fields.{ cs_fields; cs_switch; _ } ->
-      of_static_fields ~exts ext_name cs_fields
-      + of_switch_field ~exts ext_name cs_switch
+      M.(
+        of_static_fields ~exts ext_name cs_fields
+        + of_switch_field ~exts ext_name cs_switch
+      )
 
-  and of_struct_fields ~exts ext_name : P2_fields.struct_fields -> int =
+  and of_struct_fields ~exts ext_name : P2_fields.struct_fields -> t =
     fun P2_fields.{ sf_fields; sf_switch } ->
-      of_static_fields ~exts ext_name sf_fields
-      + of_switch_field ~exts ext_name sf_switch
+      M.(
+        of_static_fields ~exts ext_name sf_fields
+        + of_switch_field ~exts ext_name sf_switch
+      )
 
-  and of_event ~exts ext_name : P2_fields.event -> int =
+  and of_event ~exts ext_name : P2_fields.event -> t =
     fun P2_fields.{ ev_fields; _ } ->
       of_static_fields ~exts ext_name ev_fields
 
-  and of_error ~exts ext_name : P2_fields.error -> int =
+  and of_error ~exts ext_name : P2_fields.error -> t =
     fun P2_fields.{ er_fields; _ } ->
       of_static_fields ~exts ext_name er_fields
 
-  and of_item ~exts ext_name id : P2_fields.declaration -> int option =
+  and of_item ~exts ext_name id : P2_fields.declaration -> t option =
     function
     | `Event_alias (name, _, orig)
     | `Error_alias (name, _, orig) when name = id ->
@@ -444,7 +466,7 @@ let generate out (ext : P2_fields.extension) =
             fe "  (* padding: %d bytes *)" b;
             offset := !offset + b
           | `Field (name, P1_resolve.Prim (Types.Prim p)) ->
-            let len = Size.of_prim p in
+            let len = Size.of_prim p |> Size.to_int in
             fe "  let %s = %s buf (at + %d) in" (identifier name) (prim_get p) !offset;
             offset := !offset + len
           | _ ->

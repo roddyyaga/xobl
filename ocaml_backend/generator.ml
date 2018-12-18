@@ -103,10 +103,10 @@ module Size = struct
     | `Generic_event (name, _, _) when name = id ->
       invalid_arg ("unsupported: trying to get size of generic event " ^ id)
 
-    | `Error (name, _, err) when name = id
+    | `Error (name, _, err) when name = id ->
       Some (of_error ~exts ext_name err)
 
-    | `Request (name, _, req) when name = id
+    | `Request (name, _, req) when name = id ->
       invalid_arg ("unsupported: trying to get size of request " ^ id)
       (* Some (of_request ~exts ext_name req) *)
 

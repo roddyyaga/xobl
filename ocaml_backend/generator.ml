@@ -2,6 +2,119 @@ open Xobl_parser
 open Xobl_elaborate
 
 
+module Size = struct
+  let of_prim =
+    let open Prim in function
+    | Void -> 0
+    | Char | Byte | Bool | Int8 | Card8 -> 1
+    | Int16 | Card16 | Fd -> 2
+    | Int32 | Card32 | Float | Xid -> 4
+    | Card64 | Double -> 8
+
+  let rec of_x_type ~exts ext_name =
+    let open Types in function
+    | Prim t -> of_prim
+    | Ref id -> of_ident ~exts ext_name id
+
+  and of_ident ~exts ext_name =
+    let open Types in function
+    | Id n | Ref (ext_name, n) ->
+      let ext = String_map.find ext_name exts in
+      CCList.find_map (of_item ~exts ext_name) ext.declarations
+      |> CCOpt.get_lazy (fun () ->
+        Format.ksprintf invalid_arg "not found in %s: %s"
+          ext_name id
+      )
+  
+  and of_pad : Parser.pad -> int = function
+    | `Bytes n -> n
+    | `Align _ -> 0
+
+  and of_padding : Parser.padding -> int =
+    fun Parser.{ pd_pad; pd_serialize } ->
+      of_pad pd_pad
+
+  and of_field_type ~exts ext_name : P1_resolve.field_type -> int =
+    let open P1_resolve in function
+    | Prim t
+    | Enum (_, t) | Mask (_, t)
+    | Enum_or (_, t) | Mask_or (_, t) ->
+      of_x_type ~exts ext_name t
+
+  and of_static_fields ~exts ext_name : P2_fields.static_field -> int =
+    function
+    | `Pad p -> of_padding p
+    | `Field (_, typ)
+    | `List_length (_, typ) -> of_field_type ~exts ext_name typ
+    | `List (name, typ, expr) ->
+      Format.ksprintf invalid_arg
+        "not implementing: trying to get size of list %s.%s"
+        ext_name name
+
+  and of_switch_field ~exts ext_name = function
+    | Some (_, s) -> of_switch ~exts ext_name s
+    | None -> 0
+
+  and of_switch ~exts ext_name : P2_fields.switch -> int =
+    fun P2_fields.{ sw_cases; _ } ->
+      List.fold_left
+        (fun (acc, x) -> CCInt.max acc (of_case x)) 0
+        sw_cases
+
+  and of_case ~exts ext_name : P2_fields.case -> int =
+    fun P2_fields.{ cs_fields; cs_switch; _ } ->
+      of_static_fields ~exts ext_name cs_fields
+      + of_switch_field ~exts ext_name cs_switch
+
+  and of_struct_fields ~exts ext_name : P2_fields.struct_fields -> int =
+    fun P2_fields.{ sf_fields; sf_switch } ->
+      of_static_fields ~exts ext_name sf_fields
+      + of_switch_field ~exts ext_name sf_switch
+
+  and of_event ~exts ext_name : P2_fields.event -> int =
+    fun P2_fields.{ ev_fields; _ } ->
+      of_static_fields ~exts ext_name ev_fields
+
+  and of_error ~exts ext_name : P2_fields.error -> int =
+    fun P2_fields.{ er_fields; _ } ->
+      of_static_fields ~exts ext_name er_fields
+
+  and of_item ~exts ext_name id : P2_fields.declaration -> int option =
+    function
+    | `Event_alias (name, _, orig)
+    | `Error_alias (name, _, orig) when name = id ->
+      Some (of_ident ~exts ext_name orig)
+    
+    | `Alias (name, typ) when name = id ->
+      Some (of_x_type ~exts ext_name typ)
+
+    | `X_id_union (name, _) when name = id ->
+      Some (of_prim Xid)
+
+    | `Struct (name, fields) when name = id ->
+      Some (of_struct_fields ~exts ext_name fields)
+
+    | `Union (name, static_fields) when name = id ->
+      invalid_arg ("unsupported: trying to get size of union " ^ id)
+
+    | `Event (name, _, ev) when name = id ->
+      Some (of_event ~exts ext_name ev)
+
+    | `Generic_event (name, _, _) when name = id ->
+      invalid_arg ("unsupported: trying to get size of generic event " ^ id)
+
+    | `Error (name, _, err) when name = id
+      Some (of_error ~exts ext_name err)
+
+    | `Request (name, _, req) when name = id
+      invalid_arg ("unsupported: trying to get size of request " ^ id)
+      (* Some (of_request ~exts ext_name req) *)
+
+    | _ ->
+      None
+end
+
+
 let variant name =
   if name.[0] >= '0' && name.[0] <= '9' then
     "_" ^ Casing.snake name
@@ -56,15 +169,6 @@ let prim_str =
     | Float  -> "float"
     | Double -> "float"
     | Xid    -> "xid"
-
-
-let prim_len =
-  let open Prim in function
-  | Void -> 0
-  | Char | Byte | Bool | Int8 | Card8 -> 1
-  | Int16 | Card16 | Fd -> 2
-  | Int32 | Card32 | Float | Xid -> 4
-  | Card64 | Double -> 8
 
 
 let prim_get =
@@ -334,7 +438,7 @@ let generate out (ext : P2_fields.extension) =
             fe "  (* padding: %d bytes *)" b;
             offset := !offset + b
           | `Field (name, P1_resolve.Prim (Types.Prim p)) ->
-            let len = prim_len p in
+            let len = Size.of_prim p in
             fe "  let %s = %s buf (at + %d) in" (identifier name) (prim_get p) !offset;
             offset := !offset + len
           | _ ->

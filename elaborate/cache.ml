@@ -38,7 +38,9 @@ module Lookup = struct
 
   let find_qualified tbl name =
     string_split ':' name
-    |> CCOpt.map (fun (ext_fname, name) -> find tbl name ext_fname)
+    |> CCOpt.map (fun (ext_fname, name) ->
+      find tbl name ext_fname
+    )
 
   let find_in_ext tbl name ext =
     find_opt tbl name ext.Types.file_name
@@ -57,7 +59,7 @@ module Lookup = struct
       find_in_imports tbl name ext
     )
     |> CCOpt.get_lazy (fun () ->
-      invalid_arg name
+      Format.ksprintf invalid_arg "couldn't find name: %s" name
     )
 
   let lookup tbl (update : 'a -> 'a) used_ext name =

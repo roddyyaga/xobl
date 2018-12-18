@@ -18,7 +18,7 @@ module Size = struct
 
   and of_ident ~exts ext_name ident : int =
     let open Types in
-    let n, ext_name = match ident with
+    let ext_name, n = match ident with
       | Id n -> (ext_name, n)
       | Ext_id (ext_name, n) -> (ext_name, n)
     in

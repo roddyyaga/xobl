@@ -170,12 +170,43 @@ let static_field_str : P2_fields.static_field -> string = function
       (identifier n) (field_type_str t) (expression_str l)
 
 
+let dynamic_field_str : P2_fields.dynamic_field -> string = function
+  | `List_var (n, t) ->
+    Printf.sprintf "%s : %s array; (* variable length *)"
+      (identifier n) (field_type_str t)
+  | #P2_fields.static_field as f ->
+    static_field_str f
+
+
+let request_field_str : P2_fields.request_field -> string = function
+  | `Expr (n, typ, expr) ->
+    Printf.sprintf "(* expr field: %s : %s = %s *)"
+      (identifier n) (field_type_str typ) (expression_str expr)
+  | #P2_fields.dynamic_field as f ->
+    dynamic_field_str f
+
+let is_request_struct_empty (rq : P2_fields.request_field list) =
+  let filter = function
+    | `List_length _ | `Pad _ | `Expr _ -> false
+    | _ -> true
+  in
+  List.length (List.filter filter rq) < 1
+
+let is_struct_empty (fields : [> P2_fields.static_field ] list) =
+  let filter = function
+    | `List_length _ | `Pad _ -> false
+    | _ -> true
+  in
+  List.length (List.filter filter fields) < 1
+
+
+
 (*
 let switch_cond_str : Last_pass.cond -> string = function
   | `Bit_and e ->
     "fun cond' -> (" ^ expression_str e ^ ") land cond' <> 0"
   | `Eq e ->
-    "fun cond' -> (" ^ exoression_str e ^ ") = cond'"
+    "fun cond' -> (" ^ expression_str e ^ ") = cond'"
 *)
 
 
@@ -364,8 +395,49 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
       fe "(* error n.%d *)" number
 
 
-    | `Request _ | `Event _ | `Generic_event _
-    | `Event_alias _ | `Event_struct _ ->
+    | `Event (ev_name, _number, P2_fields.{ ev_fields; _ }) ->
+      if not (is_struct_empty ev_fields) then (
+        fe "type %s_event = {" (Casing.snake ev_name);
+        ev_fields |> List.iter (fun x ->
+          fe "  %s" (static_field_str x)
+        );
+        pe "}"
+      ) else (
+        fe "type %s_event = unit" (Casing.snake ev_name)
+      )
+
+
+    | `Event_struct (name, _evs) ->
+      fe "type %s = unit" (Casing.snake name)
+
+
+    | `Request (req_name, _number, P2_fields.{ rq_params; rq_reply; _ }) ->
+      if not (is_request_struct_empty rq_params.P2_fields.rf_fields) then (
+        fe "type %s_request_params = {" (Casing.snake req_name);
+        rq_params.P2_fields.rf_fields |> List.iter (fun x ->
+          fe "  %s" (request_field_str x)
+        );
+        pe "}"
+      ) else (
+        fe "type %s_request_params = unit" (Casing.snake req_name)
+      );
+      rq_reply |> CCOpt.iter (fun P2_fields.{ re_fields; _ } ->
+        if not (is_struct_empty re_fields) then (
+          fe "type %s_request_reply = {" (Casing.snake req_name);
+          re_fields |> List.iter (fun x ->
+            fe "  %s" (dynamic_field_str x)
+          );
+          pe "}"
+        ) else (
+          (* Apparently somebody thought sending a reply with
+             just padding was a good idea. *)
+          ()
+        )
+      )
+
+
+    | `Generic_event _
+    | `Event_alias _ ->
       ()
   end;
   let errors = List.filter (function `Error _ | `Error_alias _ -> true | _ -> false) ext.declarations in

@@ -15,6 +15,10 @@ module M = struct
     | `Unbounded n, `Unbounded m ->
       `Unbounded (f n m)
 
+  let ( * ) (n : int) : t -> t = function
+    | `Bounded m -> `Bounded (n * m)
+    | `Unbounded m -> `Unbounded (n * m)
+
   let ( + ) = lift ( + )
   let max = lift max
   let list_max_by f =
@@ -38,6 +42,34 @@ let get_bounded_exn : t -> int = function
   | `Unbounded _ ->
     invalid_arg "expected bounded size, got unbounded"
 
+
+let rec list_length : P1_resolve.expression -> int option =
+  function
+  | `Binop (op, e1, e2) ->
+    let binop : Parser.binop -> int -> int -> int = function
+      | `Add -> ( + )
+      | `Sub -> ( - )
+      | `Mul -> ( * )
+      | `Div -> ( / )
+      | `Bit_and -> ( land )
+      | `Bit_left_shift -> ( lsl )
+    in
+    CCOpt.map2 (binop op) (list_length e1) (list_length e2)
+  | `Unop (`Bit_not, e) ->
+    CCOpt.map lnot (list_length e)
+
+  | `Value n ->
+    Some n
+  | `Bit n ->
+    Some (1 lsl n)
+
+  | `Field_ref _
+  | `Param_ref _
+  | `Enum_ref _ (* ??? *)
+  | `Sum_of _ (* FIXME *)
+  | `Current_ref
+  | `Pop_count _ ->
+    None
 
 let of_prim : Prim.t -> t =
   let open Prim in function
@@ -85,8 +117,10 @@ and of_static_field ~exts ext_name : P2_fields.static_field -> t =
   | `Pad p -> of_padding p
   | `Field (_, typ)
   | `List_length (_, typ) -> of_field_type ~exts ext_name typ
-  | `List _ ->
-    `Unbounded 0
+  | `List (_, typ, expr) ->
+    match list_length expr with
+    | Some n -> M.(n * of_field_type ~exts ext_name typ)
+    | None -> `Unbounded 0
 
 and of_dynamic_field ~exts ext_name : P2_fields.dynamic_field -> t =
   function

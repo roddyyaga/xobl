@@ -1,3 +1,6 @@
+open Xobl_parser
+open Xobl_elaborate
+
 type t =
   [ `Bounded of int
   | `Unbounded of int ]
@@ -14,11 +17,19 @@ module M = struct
 
   let ( + ) = lift ( + )
   let max = lift max
+  let list_max_by f =
+    List.fold_left
+      (fun acc x -> max acc (f x))
+      (`Bounded 0)
 end
 
 
 let to_int : t -> int = function
   | `Bounded x | `Unbounded x -> x
+
+let get_bounded : t -> int option = function
+  | `Bounded x -> Some x
+  | `Unbounded _ -> None
 
 let get_bounded_exn : t -> int = function
   | `Bounded x -> x
@@ -131,6 +142,9 @@ and of_item ~exts ext_name id : P2_fields.declaration -> t option =
   | `Event (name, _, ev) when name = id ->
     Some (of_event ~exts ext_name ev)
 
+  | `Event_struct (name, events) when name = id ->
+    Some (M.list_max_by (of_ident ~exts ext_name) events)
+
   | `Generic_event (name, _, _) when name = id ->
     invalid_arg ("unsupported: trying to get size of generic event " ^ id)
 
@@ -141,5 +155,20 @@ and of_item ~exts ext_name id : P2_fields.declaration -> t option =
     invalid_arg ("unsupported: trying to get size of request " ^ id)
     (* Some (of_request ~exts ext_name req) *)
 
-  | _ ->
+  | `Enum (name, _) when name = id ->
+    Format.ksprintf invalid_arg
+      "trying to get size of enum %s.%s" ext_name id
+
+  | `Event_alias _
+  | `Error_alias _
+  | `Alias _
+  | `X_id_union _
+  | `Struct _
+  | `Union _
+  | `Event _
+  | `Event_struct _
+  | `Generic_event _
+  | `Error _
+  | `Request _
+  | `Enum _ ->
     None

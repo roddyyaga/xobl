@@ -21,6 +21,8 @@ module M = struct
     List.fold_left
       (fun acc x -> max acc (f x))
       (`Bounded 0)
+  let list_sum_with f =
+    List.fold_left (fun acc x -> acc + f x) (`Bounded 0)
 end
 
 
@@ -78,15 +80,27 @@ and of_field_type ~exts ext_name : P1_resolve.field_type -> t =
   | Enum_or (_, t) | Mask_or (_, t) ->
     of_x_type ~exts ext_name t
 
-and of_static_fields ~exts ext_name (ls : P2_fields.static_field list) : t =
-  ls |> List.map (function
-    | `Pad p -> of_padding p
-    | `Field (_, typ)
-    | `List_length (_, typ) -> of_field_type ~exts ext_name typ
-    | `List _ ->
-      `Unbounded 0
-  )
-  |> M.(List.fold_left ( + ) (`Bounded 0))
+and of_static_field ~exts ext_name : P2_fields.static_field -> t =
+  function
+  | `Pad p -> of_padding p
+  | `Field (_, typ)
+  | `List_length (_, typ) -> of_field_type ~exts ext_name typ
+  | `List _ ->
+    `Unbounded 0
+
+and of_dynamic_field ~exts ext_name : P2_fields.dynamic_field -> t =
+  function
+  | `List_var _ ->
+    `Unbounded 0
+  | #P2_fields.static_field as f ->
+    of_static_field ~exts ext_name f
+
+and of_request_field ~exts ext_name : P2_fields.request_field -> t =
+  function
+  | `Expr _ ->
+    `Unbounded 0
+  | #P2_fields.dynamic_field as f ->
+    of_dynamic_field ~exts ext_name f
 
 and of_switch_field ~exts ext_name = function
   | Some (_, s) -> of_switch ~exts ext_name s
@@ -94,32 +108,33 @@ and of_switch_field ~exts ext_name = function
 
 and of_switch ~exts ext_name : P2_fields.switch -> t =
   fun P2_fields.{ sw_cases; _ } ->
-    List.fold_left
+    M.list_max_by (of_case ~exts ext_name) sw_cases
+    (* List.fold_left
       (fun acc x -> M.max acc (of_case ~exts ext_name x))
       (`Bounded 0)
-      sw_cases
+      sw_cases *)
 
 and of_case ~exts ext_name : P2_fields.case -> t =
   fun P2_fields.{ cs_fields; cs_switch; _ } ->
     M.(
-      of_static_fields ~exts ext_name cs_fields
+      list_sum_with (of_static_field ~exts ext_name) cs_fields
       + of_switch_field ~exts ext_name cs_switch
     )
 
 and of_struct_fields ~exts ext_name : P2_fields.struct_fields -> t =
   fun P2_fields.{ sf_fields; sf_switch } ->
     M.(
-      of_static_fields ~exts ext_name sf_fields
+      list_sum_with (of_static_field ~exts ext_name) sf_fields
       + of_switch_field ~exts ext_name sf_switch
     )
 
 and of_event ~exts ext_name : P2_fields.event -> t =
   fun P2_fields.{ ev_fields; _ } ->
-    of_static_fields ~exts ext_name ev_fields
+    M.list_sum_with (of_static_field ~exts ext_name) ev_fields
 
 and of_error ~exts ext_name : P2_fields.error -> t =
   fun P2_fields.{ er_fields; _ } ->
-    of_static_fields ~exts ext_name er_fields
+    M.list_sum_with (of_static_field ~exts ext_name) er_fields
 
 and of_item ~exts ext_name id : P2_fields.declaration -> t option =
   function

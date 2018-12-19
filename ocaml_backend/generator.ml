@@ -1,6 +1,8 @@
 open Xobl_parser
 open Xobl_elaborate
 
+module String_map = Types.String_map
+
 
 let variant name =
   if name.[0] >= '0' && name.[0] <= '9' then
@@ -48,26 +50,26 @@ let prim_str =
     | Int8   -> "int"
     | Int16  -> "int"
     | Int32  -> "int32"
-    | Fd     -> "fd"
+    | Fd     -> "X11_base.fd"
     | Card8  -> "int"
     | Card16 -> "int"
     | Card32 -> "int32"
     | Card64 -> "int64"
     | Float  -> "float"
     | Double -> "float"
-    | Xid    -> "xid"
+    | Xid    -> "X11_base.xid"
 
 
 let prim_get =
   let open Prim in function
   | Void -> "(fun _ _ -> ())"
-  | Bool -> "get_bool"
-  | Char | Byte | Int8 | Card8 -> "get_byte"
-  | Int16 | Fd -> "get_int16"
-  | Card16 -> "get_uint16"
-  | Int32 -> "get_int32"
-  | Card32 -> "get_uint32"
-  | Xid -> "get_xid"
+  | Bool -> "X11_base.get_bool"
+  | Char | Byte | Int8 | Card8 -> "X11_base.get_byte"
+  | Int16 | Fd -> "X11_base.get_int16"
+  | Card16 -> "X11_base.get_uint16"
+  | Int32 -> "X11_base.get_int32"
+  | Card32 -> "X11_base.get_uint32"
+  | Xid -> "X11_base.get_xid"
   | p -> Printf.kprintf invalid_arg "not implemented: %s" (prim_str p)
 
 
@@ -85,10 +87,10 @@ let field_type_str =
   | Mask (e, t) ->
     (ident_part_str e) ^ "_mask (* " ^ (x_type_str t) ^ " *)"
   | Enum_or (e, t) ->
-    Printf.sprintf "(%s, %s_enum) either"
+    Printf.sprintf "(%s, %s_enum) X11_base.either"
       (x_type_str t) (ident_part_str e)
   | Mask_or (e, t) ->
-    Printf.sprintf "(%s, %s_mask) either"
+    Printf.sprintf "(%s, %s_mask) X11_base.either"
       (x_type_str t) (ident_part_str e)
 
 
@@ -149,7 +151,7 @@ let rec expression_str : P1_resolve.expression -> string =
   | `Current_ref ->
     "curr'"
   | `Pop_count expr ->
-    p "pop_count (%s)" (expression_str expr)
+    p "X11_base.pop_count (%s)" (expression_str expr)
   | `Value n ->
     string_of_int n
   | `Bit n ->
@@ -181,15 +183,15 @@ let switch_cond_str : Last_pass.cond -> string = function
 - handle empty (only padding) structs
 *)
 
-let generate out (ext : P2_fields.extension) =
+let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.extension) =
   let fe fmt = Printf.fprintf out (fmt ^^ "\n") in
   let ps s = output_string out s in
   let pe s = output_string out s; output_char out '\n' in
   let pn () = output_char out '\n' in
 
-  pe "(*****************************************************************************)";
+  (* pe "(*****************************************************************************)";
   fe "module %s = struct" (Casing.caml ext.file_name);
-  pe "(*****************************************************************************)";
+  pe "(*****************************************************************************)"; *)
   (* pe "open X11_base";*)
 
   ext.version |> CCOpt.iter (fun (maj, min) ->
@@ -213,7 +215,7 @@ let generate out (ext : P2_fields.extension) =
          type rather than simply aliasing them to XIDs would be way more
          trouble than it's worth. It's not strictly correct, but it's usable.
       *)
-      fe "type %s = xid" (identifier name)
+      fe "type %s = X11_base.xid" (identifier name)
 
 
     | `Enum (name, Parser.{ en_vals; en_bits }) ->
@@ -257,7 +259,7 @@ let generate out (ext : P2_fields.extension) =
       end;
       if refs.masks > 0 then
         if List.length en_vals > 0 then
-          fe "type %s_mask = (%s_bits, %s_vals) mask" ident ident ident
+          fe "type %s_mask = (%s_bits, %s_vals) X11_base.mask" ident ident ident
         else
           fe "type %s_mask = %s_bits list" ident ident;
 
@@ -324,6 +326,8 @@ let generate out (ext : P2_fields.extension) =
           | `Pad Parser.{ pd_pad = `Bytes b; _ } ->
             fe "  (* padding: %d bytes *)" b;
             offset := !offset + b
+          (* | `Field (name, ident) ->
+            let len = Size.of_ident ~exts ext.file_name ident |> Size.get_bounded_exn in *)
           | `Field (name, P1_resolve.Prim (Types.Prim p)) ->
             let len = Size.of_prim p |> Size.to_int in
             fe "  let %s = %s buf (at + %d) in" (identifier name) (prim_get p) !offset;
@@ -387,5 +391,5 @@ let generate out (ext : P2_fields.extension) =
     end;
     pe "  | _ -> None"
   end;
-  pe "end";
+  (* pe "end"; *)
   pn ()

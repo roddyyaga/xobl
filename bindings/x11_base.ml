@@ -59,3 +59,9 @@ let parse_error buf at =
   let code = get_byte buf (at + 1) in
   let seq_num = get_uint16 buf (at + 2) in
   (code, seq_num)
+
+
+module type Extension = sig
+  val version : int * int
+  val query_version_name : string
+end

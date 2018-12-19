@@ -1,0 +1,37 @@
+(library
+ (name xobl_bindings))
+
+(rule
+ (deps (glob_files ../xproto/src/*.xml))
+ (action
+  (run ../compiler/xobl_compiler.exe %{deps}))
+ (targets bigreq.ml
+          composite.ml
+          damage.ml
+          dpms.ml
+          dri2.ml
+          dri3.ml
+          ge.ml
+          glx.ml
+          present.ml
+          randr.ml
+          render.ml
+          record.ml
+          res.ml
+          shape.ml
+          shm.ml
+          sync.ml
+          xc_misc.ml
+          xevie.ml
+          xf86dri.ml
+          xf86vidmode.ml
+          xfixes.ml
+          xinerama.ml
+          xinput.ml
+          xkb.ml
+          xprint.ml
+          xproto.ml
+          xselinux.ml
+          xtest.ml
+          xv.ml
+          xvmc.ml))

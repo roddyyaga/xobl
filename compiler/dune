@@ -1,0 +1,3 @@
+(executable
+ (name xobl_compiler)
+ (libraries containers xobl_parser xobl_elaborate xobl_ocaml_backend))

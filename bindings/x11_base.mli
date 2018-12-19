@@ -23,3 +23,8 @@ val get_bool : buffer -> int -> bool
 val get_xid : buffer -> int -> xid
 
 val parse_error : buffer -> int -> int * int
+
+module type Extension = sig
+  val version : int * int
+  val query_version_name : string
+end

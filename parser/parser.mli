@@ -46,13 +46,9 @@ The declarations have a few separate namespaces:
 
 - types
 - enums
-- events
-- generic events
+- events and generic events
 - errors
 - requests
-
-{b NOTE}: the distinction between events and generic events {b does not} apply
-to their event number; these are shared between both event types.
 
 {3 Name clashes}
 Name clashes {i within} these namespaces are allowed between different

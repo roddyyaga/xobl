@@ -122,6 +122,7 @@ type event_no =
   ; ev_ext    : string
   (* NOTE: for some inexplicable reason, the Parser.extension_info field
      to use here is [name] instead of [file_name]. *)
+  ; ev_ext_file_name : string
   ; ev_number : int }
 
 let event_no_table : event_no list ref = ref []
@@ -130,10 +131,10 @@ let event_name_from_no curr_ext ext no =
   let find ev = ev.ev_ext = ext && ev.ev_number = no in
   List.find_opt find !event_no_table
   |> CCOpt.map (fun ev ->
-    if curr_ext.Types.file_name = ext then
+    if curr_ext.Types.name = ext then
       Types.Id ev.ev_name
     else
-      Types.Ext_id (ext, ev.ev_name)
+      Types.Ext_id (ev.ev_ext_file_name, ev.ev_name)
   )
 
 
@@ -155,7 +156,12 @@ let init =
 
       | `Event (name, no, _) ->
         add_to_table event_table ext.Types.file_name name ();
-        event_no_table := { ev_name = name; ev_ext = ext.Types.name; ev_number = no } :: !event_no_table
+        event_no_table := {
+          ev_name = name;
+          ev_ext = ext.Types.name;
+          ev_ext_file_name = ext.Types.file_name;
+          ev_number = no
+        } :: !event_no_table
 
       | `Error (name, _, _) ->
         add_to_table error_table ext.Types.file_name name ()

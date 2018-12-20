@@ -395,7 +395,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
       fe "(* error n.%d *)" number
 
 
-    | `Event (ev_name, _number, P2_fields.{ ev_fields; _ }) ->
+    | `Event (ev_name, number, P2_fields.{ ev_fields; _ }) ->
       if not (is_struct_empty ev_fields) then (
         fe "type %s_event = {" (Casing.snake ev_name);
         ev_fields |> List.iter (fun x ->
@@ -404,32 +404,69 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
         pe "}"
       ) else (
         fe "type %s_event = unit" (Casing.snake ev_name)
-      )
+      );
+      fe "(* event n.%d *)" number
 
 
-    | `Event_struct (name, _evs) ->
-      fe "type %s = unit" (Casing.snake name)
+    | `Event_alias (ev_name, number, old) ->
+      begin match old with
+      | Types.Id n ->
+        fe "type %s_event = %s_event" (Casing.snake ev_name)
+          (Casing.snake n)
+      | Types.Ext_id (e, n) ->
+        fe "type %s_event = %s.%s_event" (Casing.snake ev_name)
+          (Casing.caml e) (Casing.snake n)
+      end;
+      fe "(* event n.%d *)" number
 
 
-    | `Request (req_name, _number, P2_fields.{ rq_params; rq_reply; _ }) ->
-      if not (is_request_struct_empty rq_params.P2_fields.rf_fields) then (
-        fe "type %s_request_params = {" (Casing.snake req_name);
-        rq_params.P2_fields.rf_fields |> List.iter (fun x ->
-          fe "  %s" (request_field_str x)
+    | `Generic_event (ev_name, number, P2_fields.{ gev_fields; _ }) ->
+      if not (is_struct_empty gev_fields) then (
+        fe "type %s_event = {" (Casing.snake ev_name);
+        gev_fields |> List.iter (fun x ->
+          fe "  %s" (dynamic_field_str x)
         );
         pe "}"
       ) else (
-        fe "type %s_request_params = unit" (Casing.snake req_name)
+        fe "type %s_event = unit" (Casing.snake ev_name)
       );
+      fe "(* generic event n.%d *)" number
+
+
+    | `Event_struct (name, evs) ->
+      fe "type %s = [" (Casing.snake name);
+      evs |> List.iter (function
+        | Types.Id n ->
+          fe "  | `%s of %s_event" (Casing.caml n) (Casing.snake n)
+        | Types.Ext_id (e, n) ->
+          fe "  | `%s of %s.%s_event" (Casing.caml n) (Casing.caml e)
+            (Casing.snake n)
+      );
+      pe "]\n(* event struct *)"
+
+
+    | `Request (req_name, _number, P2_fields.{ rq_params; rq_reply; _ }) ->
+      let args =
+        if not (is_request_struct_empty rq_params.P2_fields.rf_fields) then (
+          fe "type %s_params = {" (Casing.snake req_name);
+          rq_params.P2_fields.rf_fields |> List.iter (fun x ->
+            fe "  %s" (request_field_str x)
+          );
+          pe "}";
+          Format.sprintf "(_params : %s_params)" (Casing.snake req_name)
+        ) else (
+          "()"
+        )
+      in
       let reply_type =
         match rq_reply with
           | Some(P2_fields.{ re_fields; _ }) when not (is_struct_empty re_fields) ->
-            fe "type %s_request_reply = {" (Casing.snake req_name);
+            fe "type %s_reply = {" (Casing.snake req_name);
             re_fields |> List.iter (fun x ->
               fe "  %s" (dynamic_field_str x)
             );
             pe "}";
-            Format.sprintf "%s_request_reply Lwt.t" (Casing.snake req_name)
+            Format.sprintf "%s_reply Lwt.t" (Casing.snake req_name)
 
           | Some _ ->
             "unit Lwt.t"
@@ -437,14 +474,9 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
           | None ->
             "unit"
       in
-      fe "let %s_request (_params : %s_request_params) : %s ="
-        (Casing.snake req_name) (Casing.snake req_name) reply_type;
+      fe "let %s_request %s : %s ="
+        (Casing.snake req_name) args reply_type;
       pe "  failwith \"not implemented\""
-
-
-    | `Generic_event _
-    | `Event_alias _ ->
-      ()
   end;
   let errors = List.filter (function `Error _ | `Error_alias _ -> true | _ -> false) ext.declarations in
   if errors <> [] then begin
@@ -469,5 +501,3 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
     end;
     pe "  | _ -> None"
   end;
-  (* pe "end"; *)
-  pn ()

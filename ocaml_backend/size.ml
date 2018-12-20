@@ -188,8 +188,9 @@ and of_item ~exts ext_name id : P2_fields.declaration -> t option =
   | `Union (name, _static_fields) when name = id ->
     invalid_arg ("unsupported: trying to get size of union " ^ id)
 
-  | `Event (name, _, ev) when name = id ->
-    Some (of_event ~exts ext_name ev)
+  | `Event (name, _, _) when name = id ->
+    (* Some (of_event ~exts ext_name ev) *)
+    Some (`Bounded 32)
 
   | `Event_struct (name, events) when name = id ->
     Some (M.list_max_by (of_ident ~exts ext_name) events)

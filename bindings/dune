@@ -1,5 +1,6 @@
 (library
- (name xobl_bindings))
+ (name xobl_bindings)
+ (libraries lwt))
 
 (rule
  (deps (glob_files ../xproto/src/*.xml))

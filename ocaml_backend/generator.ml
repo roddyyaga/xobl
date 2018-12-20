@@ -421,19 +421,25 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
       ) else (
         fe "type %s_request_params = unit" (Casing.snake req_name)
       );
-      rq_reply |> CCOpt.iter (fun P2_fields.{ re_fields; _ } ->
-        if not (is_struct_empty re_fields) then (
-          fe "type %s_request_reply = {" (Casing.snake req_name);
-          re_fields |> List.iter (fun x ->
-            fe "  %s" (dynamic_field_str x)
-          );
-          pe "}"
-        ) else (
-          (* Apparently somebody thought sending a reply with
-             just padding was a good idea. *)
-          ()
-        )
-      )
+      let reply_type =
+        match rq_reply with
+          | Some(P2_fields.{ re_fields; _ }) when not (is_struct_empty re_fields) ->
+            fe "type %s_request_reply = {" (Casing.snake req_name);
+            re_fields |> List.iter (fun x ->
+              fe "  %s" (dynamic_field_str x)
+            );
+            pe "}";
+            Format.sprintf "%s_request_reply Lwt.t" (Casing.snake req_name)
+
+          | Some _ ->
+            "unit Lwt.t"
+
+          | None ->
+            "unit"
+      in
+      fe "let %s_request (_params : %s_request_params) : %s ="
+        (Casing.snake req_name) (Casing.snake req_name) reply_type;
+      pe "  failwith \"not implemented\""
 
 
     | `Generic_event _

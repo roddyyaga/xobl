@@ -185,19 +185,20 @@ let request_field_str : P2_fields.request_field -> string = function
   | #P2_fields.dynamic_field as f ->
     dynamic_field_str f
 
+
+let is_hidden_request_field : P2_fields.request_field -> bool = function
+  | `List_length _ | `Pad _ | `Expr _ -> false
+  | _ -> true
+
+let is_hidden_field : [> P2_fields.static_field ] -> bool = function
+  | `List_length _ | `Pad _ -> false
+  | _ -> true
+
 let is_request_struct_empty (rq : P2_fields.request_field list) =
-  let filter = function
-    | `List_length _ | `Pad _ | `Expr _ -> false
-    | _ -> true
-  in
-  List.length (List.filter filter rq) < 1
+  List.length (List.filter is_hidden_request_field rq) < 1
 
 let is_struct_empty (fields : [> P2_fields.static_field ] list) =
-  let filter = function
-    | `List_length _ | `Pad _ -> false
-    | _ -> true
-  in
-  List.length (List.filter filter fields) < 1
+  List.length (List.filter is_hidden_field fields) < 1
 
 
 
@@ -447,16 +448,19 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
 
     | `Request (req_name, _number, P2_fields.{ rq_params; rq_reply; _ }) ->
       let args =
-        if not (is_request_struct_empty rq_params.P2_fields.rf_fields) then (
+        match List.filter is_hidden_field rq_params.P2_fields.rf_fields with
+        | [] ->
+          "()"
+        | f :: [] ->
+          let arg = request_field_str f in
+          Format.sprintf "(%s)" @@ String.sub arg 0 (String.index arg ';')
+        | _ ->
           fe "type %s_params = {" (Casing.snake req_name);
           rq_params.P2_fields.rf_fields |> List.iter (fun x ->
             fe "  %s" (request_field_str x)
           );
           pe "}";
           Format.sprintf "(_params : %s_params)" (Casing.snake req_name)
-        ) else (
-          "()"
-        )
       in
       let reply_type =
         match rq_reply with
@@ -474,7 +478,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
           | None ->
             "unit"
       in
-      fe "let %s_request %s : %s ="
+      fe "let[@warning \"-27\"] %s_request %s : %s ="
         (Casing.snake req_name) args reply_type;
       pe "  failwith \"not implemented\""
   end;

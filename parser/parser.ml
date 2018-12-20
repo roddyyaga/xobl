@@ -437,10 +437,10 @@ let request_of_xml fields : request_fields * reply option =
   let rf_switch, fields = consume_switch fields in
   let rec parse_params acc = function
     | [] ->
-      acc, None
+      List.rev acc, None
     | Xml.E ("reply", [], fields) :: [] ->
       let reply = reply_of_xml fields in
-      acc, Some reply
+      List.rev acc, Some reply
     | Xml.E f :: rest ->
       let f = request_field_of_xml_el f in
       parse_params (f :: acc) rest

@@ -9,7 +9,11 @@ The Analyzer should then take this output and figure out the types of all the fi
 
 - For list fields, we have to figure out what's the field that holds the length
   and have a separate kind of field for it; it's low-level stuff that shouldn't
-  really be exposed to the user.
+  really be exposed to the user. (**DONE**)
+
+- Some list fields don't explicitly specify a length field, but they need one
+  (e.g. QueryTextExtents in xproto), so we need to infer it somehow.
+  There's some code in xcbgen that does it, but I'm not sure how it works.
 
 - We need to figure out how to fold unions into switches. This has to be done
   ad-hoc, because there's no agreed place to put the enum flag to distinguish

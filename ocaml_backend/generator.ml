@@ -73,6 +73,28 @@ let prim_get =
   | p -> Printf.kprintf invalid_arg "not implemented: %s" (prim_str p)
 
 
+let prim_put_type =
+  let open Prim in function
+  | Void -> "unit"
+  | Bool -> "bool"
+  | Char | Byte -> "char"
+  | Int8 | Card8 -> "int8"
+  | Int16 | Card16 | Fd -> "int16"
+  | Int32 | Card32 | Xid -> "int32"
+  | Card64 -> "int64"
+  | Float -> "float"
+  | Double -> "double"
+
+let prim_put =
+  let open Prim in function
+  | Void -> "(fun _ -> ())"
+  | p -> "X11_base.put_" ^ prim_put_type p
+
+let prim_put_int =
+  let open Prim in function
+  | Void -> "(fun _ -> ())"
+  | p -> "X11_base.put_int_as_" ^ prim_put_type p
+
 let x_type_str = function
   | Types.Prim t -> prim_str t
   | Types.Ref id -> ident_str id
@@ -141,13 +163,10 @@ let rec expression_str : P1_resolve.expression -> string =
     identifier n ^ " (* param *)"
   | `Enum_ref (_en, i) ->
     "`" ^ (Casing.caml i)
-  | `Sum_of (f, e) ->
-    begin match e with
-    | None ->
-      p "List.fold_left ( + ) 0 %s" f
-    | Some e ->
-      p "List.fold_left (fun acc curr' -> acc + (%s)) 0 %s" (expression_str e) (identifier f)
-    end
+  | `Sum_of (f, None) ->
+    p "List.fold_left ( + ) 0 %s" f
+  | `Sum_of (f, Some e) ->
+    p "List.fold_left (fun acc curr' -> acc + (%s)) 0 %s" (expression_str e) (identifier f)
   | `Current_ref ->
     "curr'"
   | `Pop_count expr ->
@@ -161,8 +180,8 @@ let rec expression_str : P1_resolve.expression -> string =
 let static_field_str : P2_fields.static_field -> string = function
   | `Pad p ->
     Printf.sprintf "(* pad: %s *)" (padding_str p)
-  | `List_length (name, t) ->
-    Printf.sprintf "(* length field: %s : %s *)" (identifier name) (field_type_str t)
+  | `List_length (name, t, ls) ->
+    Printf.sprintf "(* length field of %s: %s : %s *)" (identifier ls) (identifier name) (field_type_str t)
   | `Field (n, t) ->
     Printf.sprintf "%s : %s;" (identifier n) (field_type_str t)
   | `List (n, t, l) ->
@@ -447,20 +466,20 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
 
 
     | `Request (req_name, _number, P2_fields.{ rq_params; rq_reply; _ }) ->
-      let args =
+      let args, params_prefix =
         match List.filter is_hidden_field rq_params.P2_fields.rf_fields with
         | [] ->
-          "()"
+          "()", ""
         | f :: [] ->
           let arg = request_field_str f in
-          Format.sprintf "(%s)" @@ String.sub arg 0 (String.index arg ';')
+          Format.sprintf "(%s)" @@ String.sub arg 0 (String.index arg ';'), ""
         | _ ->
           fe "type %s_params = {" (Casing.snake req_name);
           rq_params.P2_fields.rf_fields |> List.iter (fun x ->
             fe "  %s" (request_field_str x)
           );
           pe "}";
-          Format.sprintf "(_params : %s_params)" (Casing.snake req_name)
+          Format.sprintf "(params : %s_params)" (Casing.snake req_name), "params."
       in
       let reply_type =
         match rq_reply with
@@ -478,9 +497,26 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
           | None ->
             "unit"
       in
-      fe "let[@warning \"-27\"] %s_request %s : %s ="
-        (Casing.snake req_name) args reply_type;
+      fe "let[@warning \"-27-26\"] %s %s : %s ="
+        (identifier req_name) args reply_type;
+      pe "  let buf = Buffer.create 32 in";
+      let offset = ref 0 in
+      rq_params.P2_fields.rf_fields |> List.iter (function
+        | `Pad Parser.{ pd_pad = `Bytes b; _ } ->
+          fe "  X11_base.put_padding buf %d;" b;
+          offset := !offset + b
+        | `Pad _ ->
+          fe "  (* unsupported pad field *)"
+        | `List_length (_, P1_resolve.Prim (Types.Prim p), ls_name) ->
+          fe "  %s buf (Array.length %s%s);" (prim_put_int p)
+            params_prefix (identifier ls_name);
+          let size = Size.of_prim p |> Size.get_bounded_exn in
+          offset := !offset + size
+        | _ ->
+          pe "  (* not implemented *)"
+      );
       pe "  failwith \"not implemented\""
+
   end;
   let errors = List.filter (function `Error _ | `Error_alias _ -> true | _ -> false) ext.declarations in
   if errors <> [] then begin

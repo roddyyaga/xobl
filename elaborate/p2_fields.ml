@@ -5,7 +5,7 @@ type static_field =
   [ `Pad of Parser.padding
   | `Field of string * Prev.field_type
   | `List of string * Prev.field_type * Prev.expression
-  | `List_length of string * Prev.field_type ]
+  | `List_length of string * Prev.field_type * string ]
 
 type dynamic_field =
   [ static_field
@@ -131,13 +131,13 @@ include Pass.Make(struct
 
   let in_fields (fields : [> static_field ] list) : [> static_field ] list =
     List.fold_right (fun field acc -> match field with
-      | `List (_, _, expr) ->
+      | `List (ls_name, _, expr) ->
         begin match expr_stuff `None expr with
         | `None | `Invalid -> acc
         | `One n ->
           acc |> List.map (function
             | `Field (f, typ) when f = n ->
-              `List_length (n, typ)
+              `List_length (n, typ, ls_name)
             | d -> d
           )
         end

@@ -116,7 +116,7 @@ and of_static_field ~exts ext_name : P2_fields.static_field -> t =
   function
   | `Pad p -> of_padding p
   | `Field (_, typ)
-  | `List_length (_, typ) -> of_field_type ~exts ext_name typ
+  | `List_length (_, typ, _) -> of_field_type ~exts ext_name typ
   | `List (_, typ, expr) ->
     match list_length expr with
     | Some n -> M.(n * of_field_type ~exts ext_name typ)

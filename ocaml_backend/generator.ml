@@ -185,13 +185,13 @@ let static_field_str : P2_fields.static_field -> string = function
   | `Field (n, t) ->
     Printf.sprintf "%s : %s;" (identifier n) (field_type_str t)
   | `List (n, t, l) ->
-    Printf.sprintf "%s : %s array; (* length: %s *)"
+    Printf.sprintf "%s : %s list; (* length: %s *)"
       (identifier n) (field_type_str t) (expression_str l)
 
 
 let dynamic_field_str : P2_fields.dynamic_field -> string = function
   | `List_var (n, t) ->
-    Printf.sprintf "%s : %s array; (* variable length *)"
+    Printf.sprintf "%s : %s list; (* variable length *)"
       (identifier n) (field_type_str t)
   | #P2_fields.static_field as f ->
     static_field_str f
@@ -508,7 +508,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
         | `Pad _ ->
           fe "  (* unsupported pad field *)"
         | `List_length (_, P1_resolve.Prim (Types.Prim p), ls_name) ->
-          fe "  %s buf (Array.length %s%s);" (prim_put_int p)
+          fe "  %s buf (List.length %s%s);" (prim_put_int p)
             params_prefix (identifier ls_name);
           let size = Size.of_prim p |> Size.get_bounded_exn in
           offset := !offset + size

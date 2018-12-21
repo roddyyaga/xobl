@@ -17,6 +17,9 @@ The Analyzer should then take this output and figure out the types of all the fi
 
 - Turn the single exprfield in the spec into a normal field.
 
+- Replace the buggy serialization/deserialization functions
+  with Angstrom and Faraday.
+
 - We need to figure out how to fold unions into switches. This has to be done
   ad-hoc, because there's no agreed place to put the enum flag to distinguish
   between the members of the union.

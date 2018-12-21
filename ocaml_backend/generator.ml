@@ -63,13 +63,13 @@ let prim_str =
 let prim_get =
   let open Prim in function
   | Void -> "(fun _ _ -> ())"
-  | Bool -> "X11_base.get_bool"
-  | Char | Byte | Int8 | Card8 -> "X11_base.get_byte"
-  | Int16 | Fd -> "X11_base.get_int16"
-  | Card16 -> "X11_base.get_uint16"
-  | Int32 -> "X11_base.get_int32"
-  | Card32 -> "X11_base.get_uint32"
-  | Xid -> "X11_base.get_xid"
+  | Bool -> "X11_base.Get.bool"
+  | Char | Byte | Int8 | Card8 -> "X11_base.Get.byte"
+  | Int16 | Fd -> "X11_base.Get.int16"
+  | Card16 -> "X11_base.Get.uint16"
+  | Int32 -> "X11_base.Get.int32"
+  | Card32 -> "X11_base.Get.uint32"
+  | Xid -> "X11_base.Get.xid"
   | p -> Printf.kprintf invalid_arg "not implemented: %s" (prim_str p)
 
 
@@ -88,12 +88,12 @@ let prim_put_type =
 let prim_put =
   let open Prim in function
   | Void -> "(fun _ -> ())"
-  | p -> "X11_base.put_" ^ prim_put_type p
+  | p -> "X11_base.Put." ^ prim_put_type p
 
 let prim_put_int =
   let open Prim in function
   | Void -> "(fun _ -> ())"
-  | p -> "X11_base.put_int_as_" ^ prim_put_type p
+  | p -> "X11_base.Put.int_as_" ^ prim_put_type p
 
 let x_type_str = function
   | Types.Prim t -> prim_str t
@@ -218,6 +218,10 @@ let is_request_struct_empty (rq : P2_fields.request_field list) =
 
 let is_struct_empty (fields : [> P2_fields.static_field ] list) =
   List.length (List.filter is_hidden_field fields) < 1
+
+let is_error : P2_fields.declaration -> bool = function
+  | `Error _ | `Error_alias _ -> true
+  | _ -> false
 
 
 
@@ -503,7 +507,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
       let offset = ref 0 in
       rq_params.P2_fields.rf_fields |> List.iter (function
         | `Pad Parser.{ pd_pad = `Bytes b; _ } ->
-          fe "  X11_base.put_padding buf %d;" b;
+          fe "  X11_base.Put.padding buf %d;" b;
           offset := !offset + b
         | `Pad _ ->
           fe "  (* unsupported pad field *)"
@@ -518,7 +522,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
       pe "  failwith \"not implemented\""
 
   end;
-  let errors = List.filter (function `Error _ | `Error_alias _ -> true | _ -> false) ext.declarations in
+  let errors = List.filter is_error ext.declarations in
   if errors <> [] then begin
     pe "type errors = [";
     errors |> List.iter begin function

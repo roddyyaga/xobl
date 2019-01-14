@@ -65,7 +65,7 @@ module Put = struct
     Buffer.add_char buf char
 
   let int_as_char buf int =
-    Buffer.add_char buf (Char.chr int)
+    Buffer.add_char buf (Char.unsafe_chr int)
 
 
   let bool buf bool =
@@ -82,9 +82,10 @@ module Put = struct
 
 
   let int16 buf int16 =
-    ignore buf;
-    ignore int16;
-    ()
+    for i = 1 downto 0 do
+      let b = int16 lsr (8 * i) in
+      int_as_char buf b
+    done
 
   let int_as_int16 = int16
 

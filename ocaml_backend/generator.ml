@@ -163,7 +163,8 @@ let switch_cond_str : Last_pass.cond -> string = function
 - handle empty (only padding) structs
 *)
 
-let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.extension) =
+let generate (exts : P2_fields.extension String_map.t) out (ext : P2_fields.extension) =
+  ignore exts;
   let fe fmt = Printf.fprintf out (fmt ^^ "\n") in
   let ps s = output_string out s in
   let pe s = output_string out s; output_char out '\n' in
@@ -432,6 +433,11 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
         | `List_length (_, P1_resolve.Prim (Types.Prim p), ls_name) ->
           fe "  %s buf (List.length %s%s);" (prim_put_int p)
             params_prefix (Ident.func ls_name);
+          let size = Size.of_prim p |> Size.get_bounded_exn in
+          offset := !offset + size
+        | `Field (field_name, P1_resolve.Prim (Types.Prim p)) ->
+          fe "  %s buf %s%s;" (prim_put p)
+            params_prefix (identifier field_name);
           let size = Size.of_prim p |> Size.get_bounded_exn in
           offset := !offset + size
         | _ ->

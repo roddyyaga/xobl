@@ -3,9 +3,9 @@ type xid = int32
 type fd = int
 
 
-type ('l, 'r) either =
-  | Left of 'l
-  | Right of 'r
+type ('v, 't) variant_or =
+  | Variant of 'v
+  | Type of 'v
 
 
 type ('flags, 'vals) mask =

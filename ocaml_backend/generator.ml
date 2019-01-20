@@ -4,62 +4,6 @@ open Xobl_elaborate
 module String_map = Types.String_map
 
 
-let variant name =
-  if name.[0] >= '0' && name.[0] <= '9' then
-    "_" ^ Casing.snake name
-  else
-    Casing.caml name
-
-let ocaml_reserved =
-  [ "and"; "as"; "asr"; "assert"; "begin"; "class"; "constraint"; "do"; "done"
-  ; "downto"; "else"; "end"; "exception"; "external"; "false"; "for"; "fun"
-  ; "function"; "functor"; "if"; "in"; "include"; "inherit"; "initializer"
-  ; "land"; "lazy"; "let"; "lor"; "lsl"; "lsr"; "lxor"; "match"; "method"
-  ; "mod"; "module"; "open"; "mutable"; "new"; "nonrec"; "object"; "of"; "open"
-  ; "open!"; "or"; "private"; "rec"; "sig"; "struct"; "then"; "to"; "true"
-  ; "try"; "type"; "val"; "virtual"; "when"; "while"; "with" ]
-
-
-let identifier name =
-  let name = Casing.snake name in
-  if List.mem name ocaml_reserved then
-    name ^ "_"
-  else
-    name
-
-
-let ident_str = function
-  | Types.Id n -> identifier n
-  | Types.Ext_id (e, n) ->
-    Casing.caml e ^ "." ^ identifier n
-
-
-let ident_part_str = function
-  | Types.Id n -> Casing.snake n
-  | Types.Ext_id (e, n) ->
-    Casing.caml e ^ "." ^ Casing.snake n
-
-
-
-let prim_str =
-  let open Prim in function
-    | Void   -> "unit"
-    | Char   -> "char"
-    | Byte   -> "char"
-    | Bool   -> "bool"
-    | Int8   -> "int"
-    | Int16  -> "int"
-    | Int32  -> "int32"
-    | Fd     -> "X11_base.fd"
-    | Card8  -> "int"
-    | Card16 -> "int"
-    | Card32 -> "int32"
-    | Card64 -> "int64"
-    | Float  -> "float"
-    | Double -> "float"
-    | Xid    -> "X11_base.xid"
-
-
 let prim_get =
   let open Prim in function
   | Void -> "(fun _ _ -> ())"
@@ -70,7 +14,7 @@ let prim_get =
   | Int32 -> "X11_base.Get.int32"
   | Card32 -> "X11_base.Get.uint32"
   | Xid -> "X11_base.Get.xid"
-  | p -> Printf.kprintf invalid_arg "not implemented: %s" (prim_str p)
+  | p -> Printf.kprintf invalid_arg "not implemented: %s" (Ident.of_prim p)
 
 
 let prim_put_type =
@@ -94,26 +38,6 @@ let prim_put_int =
   let open Prim in function
   | Void -> "(fun _ -> ())"
   | p -> "X11_base.Put.int_as_" ^ prim_put_type p
-
-let x_type_str = function
-  | Types.Prim t -> prim_str t
-  | Types.Ref id -> ident_str id
-
-
-let field_type_str =
-  let open P1_resolve in function
-  | Prim t ->
-    x_type_str t
-  | Enum (e, t) ->
-    (ident_part_str e) ^ "_enum (* " ^ (x_type_str t) ^ " *)"
-  | Mask (e, t) ->
-    (ident_part_str e) ^ "_mask (* " ^ (x_type_str t) ^ " *)"
-  | Enum_or (e, t) ->
-    Printf.sprintf "(%s, %s_enum) X11_base.either"
-      (x_type_str t) (ident_part_str e)
-  | Mask_or (e, t) ->
-    Printf.sprintf "(%s, %s_mask) X11_base.either"
-      (x_type_str t) (ident_part_str e)
 
 
 let padding_str : Parser.padding -> string = function
@@ -158,15 +82,15 @@ let rec expression_str : P1_resolve.expression -> string =
   | `Unop (op, e) ->
     p "%s (%s)" (unop_str op) (expression_str e)
   | `Field_ref n ->
-    identifier n
+    Ident.record_field n
   | `Param_ref (n, _) ->
-    identifier n ^ " (* param *)"
+    Ident.record_field n ^ " (* param *)"
   | `Enum_ref (_en, i) ->
-    "`" ^ (Casing.caml i)
+    Ident.variant i
   | `Sum_of (f, None) ->
-    p "List.fold_left ( + ) 0 %s" f
+    p "List.fold_left ( + ) 0 %s" (Ident.record_field f)
   | `Sum_of (f, Some e) ->
-    p "List.fold_left (fun acc curr' -> acc + (%s)) 0 %s" (expression_str e) (identifier f)
+    p "List.fold_left (fun acc curr' -> acc + (%s)) 0 %s" (expression_str e) (Ident.record_field f)
   | `Current_ref ->
     "curr'"
   | `Pop_count expr ->
@@ -181,18 +105,19 @@ let static_field_str : P2_fields.static_field -> string = function
   | `Pad p ->
     Printf.sprintf "(* pad: %s *)" (padding_str p)
   | `List_length (name, t, ls) ->
-    Printf.sprintf "(* length field of %s: %s : %s *)" (identifier ls) (identifier name) (field_type_str t)
+    Printf.sprintf "(* length field of %s: %s : %s *)"
+      (Ident.record_field ls) (Ident.record_field name) (Ident.of_field_type t)
   | `Field (n, t) ->
-    Printf.sprintf "%s : %s;" (identifier n) (field_type_str t)
+    Printf.sprintf "%s : %s;" (Ident.record_field n) (Ident.of_field_type t)
   | `List (n, t, l) ->
     Printf.sprintf "%s : %s list; (* length: %s *)"
-      (identifier n) (field_type_str t) (expression_str l)
+      (Ident.record_field n) (Ident.of_field_type t) (expression_str l)
 
 
 let dynamic_field_str : P2_fields.dynamic_field -> string = function
   | `List_var (n, t) ->
     Printf.sprintf "%s : %s list; (* variable length *)"
-      (identifier n) (field_type_str t)
+      (Ident.record_field n) (Ident.of_field_type t)
   | #P2_fields.static_field as f ->
     static_field_str f
 
@@ -200,7 +125,7 @@ let dynamic_field_str : P2_fields.dynamic_field -> string = function
 let request_field_str : P2_fields.request_field -> string = function
   | `Expr (n, typ, expr) ->
     Printf.sprintf "(* expr field: %s : %s = %s *)"
-      (identifier n) (field_type_str typ) (expression_str expr)
+      (Ident.record_field n) (Ident.of_field_type typ) (expression_str expr)
   | #P2_fields.dynamic_field as f ->
     dynamic_field_str f
 
@@ -262,7 +187,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
         Do we have to track usage to know whether they should ever be supplied
         by the users or can we get by just using the enums?
       *)
-      fe "type %s = %s" (identifier n) (x_type_str t)
+      fe "type %s = %s" (Ident.type_ n) (Ident.of_x_type t)
 
 
     | `X_id_union (name, _) ->
@@ -270,7 +195,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
          type rather than simply aliasing them to XIDs would be way more
          trouble than it's worth. It's not strictly correct, but it's usable.
       *)
-      fe "type %s = X11_base.xid" (identifier name)
+      fe "type %s = X11_base.xid" (Ident.type_ name)
 
 
     | `Enum (name, Parser.{ en_vals; en_bits }) ->
@@ -282,22 +207,21 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
           functions)
       *)
       let refs = Cache.enum_refs ext.file_name name in
-      let ident = Casing.snake name in
 
       if List.length en_vals > 0 then begin
         if List.length en_bits > 0 then
-          fe "type %s_vals = [" ident
+          fe "type %s = [" (Ident.enum_vals name)
         else
-          fe "type %s_enum = [" ident;
+          fe "type %s = [" (Ident.enum name);
         en_vals |> List.iter begin fun (name, _n) ->
-          fe "  | `%s" (variant name)
+          fe "  | %s" (Ident.variant name)
         end;
         pe "]"
       end;
       if List.length en_bits > 0 then begin
-        fe "type %s_bits = [" ident;
+        fe "type %s = [" (Ident.mask_bits name);
         en_bits |> List.iter begin fun (name, _n) ->
-          fe "  | `%s" (variant name)
+          fe "  | %s" (Ident.variant name)
         end;
         pe "]"
       end;
@@ -306,22 +230,24 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
         match List.length en_vals, List.length en_bits with
         | 0, 0 -> assert false
         | 0, _ ->
-          fe "type %s_enum = %s_bits" ident ident
+          fe "type %s = %s" (Ident.enum name) (Ident.mask_bits name)
         | _, 0 ->
           ()
         | _, _ ->
-          fe "type %s_enum = [ %s_vals | %s_bits ]" ident ident ident
+          fe "type %s = [ %s | %s ]"
+            (Ident.enum name) (Ident.enum_vals name) (Ident.mask_bits name)
       end;
       if refs.masks > 0 then
         if List.length en_vals > 0 then
-          fe "type %s_mask = (%s_bits, %s_vals) X11_base.mask" ident ident ident
+          fe "type %s = (%s, %s) X11_base.mask"
+            (Ident.mask name) (Ident.mask_bits name) (Ident.enum_vals name)
         else
-          fe "type %s_mask = %s_bits list" ident ident;
+          fe "type %s = %s list" (Ident.mask name) (Ident.mask_bits name);
 
 
     | `Union (name, fields) ->
       pe "(* union *)";
-      fe "type %s = {" (identifier name);
+      fe "type %s = {" (Ident.type_ name);
       List.iter (fun x -> pe ("  " ^ static_field_str x)) fields;
       pe "}"
 
@@ -352,25 +278,25 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
         in
         fe "type %s_%s_switch = [" (Casing.snake struct_name) (Casing.snake field_name);
         List.iter (fun (name, t_name) ->
-          fe "  | `%s of %s" (variant name) t_name
+          fe "  | %s of %s" (Ident.variant name) t_name
         ) cases;
         pe "]"
       ) s.P2_fields.sf_switch;
-      if List.length (List.filter (function `Pad _ -> false | _ -> true) s.P2_fields.sf_fields) > 0 then begin
-        fe "type %s = {" (identifier struct_name);
+      if List.length (List.filter is_hidden_field s.P2_fields.sf_fields) > 0 then begin
+        fe "type %s = {" (Ident.type_ struct_name);
         s.P2_fields.sf_fields |> List.iter (fun x ->
           fe "  %s" (static_field_str x));
         s.P2_fields.sf_switch |> CCOpt.iter (fun (field_name, _sw) ->
           fe "  %s : %s_%s_switch;"
-            (identifier field_name) (Casing.snake struct_name) (Casing.snake field_name)
+            (Ident.record_field field_name) (Casing.snake struct_name) (Casing.snake field_name)
         );
         pe "}"
       end else
-        fe "type %s = unit" (identifier struct_name)
+        fe "type %s = unit" (Ident.type_ struct_name)
 
 
     | `Error (err_name, number, error) ->
-      if List.length (List.filter (function `List_length _ | `Pad _ -> false | _ -> true) error.P2_fields.er_fields) > 0 then (
+      if List.length (List.filter is_hidden_field error.P2_fields.er_fields) > 0 then (
         fe "type %s_error = {" (Casing.snake err_name);
         error.P2_fields.er_fields |> List.iter (fun x ->
           fe "  %s" (static_field_str x));
@@ -385,7 +311,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
             let len = Size.of_ident ~exts ext.file_name ident |> Size.get_bounded_exn in *)
           | `Field (name, P1_resolve.Prim (Types.Prim p)) ->
             let len = Size.of_prim p |> Size.to_int in
-            fe "  let %s = %s buf (at + %d) in" (identifier name) (prim_get p) !offset;
+            fe "  let %s = %s buf (at + %d) in" (Ident.value name) (prim_get p) !offset;
             offset := !offset + len
           | _ ->
             fe "(* UNSUPPORTED FIELD *)"
@@ -393,7 +319,7 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
         ps "  { ";
         error.P2_fields.er_fields |> List.iter (function
           | `Field (name, _) | `List (name, _, _) ->
-            ps (identifier name ^ "; ")
+            ps (Ident.record_field name ^ "; ")
           | `List_length _ | `Pad _ -> ()
         );
         pe "}"
@@ -461,9 +387,9 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
       fe "type %s = [" (Casing.snake name);
       evs |> List.iter (function
         | Types.Id n ->
-          fe "  | `%s of %s_event" (Casing.caml n) (Casing.snake n)
+          fe "  | %s of %s_event" (Ident.variant n) (Casing.snake n)
         | Types.Ext_id (e, n) ->
-          fe "  | `%s of %s.%s_event" (Casing.caml n) (Casing.caml e)
+          fe "  | %s of %s.%s_event" (Ident.variant n) (Casing.caml e)
             (Casing.snake n)
       );
       pe "]\n(* event struct *)"
@@ -485,25 +411,17 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
           pe "}";
           Format.sprintf "(params : %s_params)" (Casing.snake req_name), "params."
       in
-      let reply_type =
-        match rq_reply with
-          | Some(P2_fields.{ re_fields; _ }) when not (is_struct_empty re_fields) ->
-            fe "type %s_reply = {" (Casing.snake req_name);
-            re_fields |> List.iter (fun x ->
-              fe "  %s" (dynamic_field_str x)
-            );
-            pe "}";
-            Format.sprintf "%s_reply Lwt.t" (Casing.snake req_name)
-
-          | Some _ ->
-            "unit Lwt.t"
-
-          | None ->
-            "unit"
-      in
-      fe "let[@warning \"-27-26\"] %s %s : %s ="
-        (identifier req_name) args reply_type;
-      pe "  let buf = Buffer.create 32 in";
+      begin match rq_reply with
+      | Some(P2_fields.{ re_fields; _ }) when not (is_struct_empty re_fields) ->
+        fe "type %s_reply = {" (Casing.snake req_name);
+        re_fields |> List.iter (fun x ->
+          fe "  %s" (dynamic_field_str x)
+        );
+        pe "}"
+      | Some _ | None -> ()
+      end;
+      fe "let[@warning \"-27-26\"] put_%s (buf : Buffer.t) %s ="
+        (Casing.snake req_name) args;
       let offset = ref 0 in
       rq_params.P2_fields.rf_fields |> List.iter (function
         | `Pad Parser.{ pd_pad = `Bytes b; _ } ->
@@ -513,13 +431,13 @@ let generate (_exts : P2_fields.extension String_map.t) out (ext : P2_fields.ext
           fe "  (* unsupported pad field *)"
         | `List_length (_, P1_resolve.Prim (Types.Prim p), ls_name) ->
           fe "  %s buf (List.length %s%s);" (prim_put_int p)
-            params_prefix (identifier ls_name);
+            params_prefix (Ident.func ls_name);
           let size = Size.of_prim p |> Size.get_bounded_exn in
           offset := !offset + size
         | _ ->
           pe "  (* not implemented *)"
       );
-      pe "  failwith \"not implemented\""
+      pe "  ()"
 
   end;
   let errors = List.filter is_error ext.declarations in

@@ -42,6 +42,8 @@ module Put : sig
   val int_as_int64 : Buffer.t -> int -> unit
 end
 
+val parse_display_name : string -> string option * string * string option
+
 val parse_error : string -> int -> int * int
 
 module type Extension = sig

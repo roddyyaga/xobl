@@ -8,7 +8,8 @@ let prim_get =
   let open Prim in function
   | Void -> "(fun _ _ -> ())"
   | Bool -> "X11_base.Get.bool"
-  | Char | Byte | Int8 | Card8 -> "X11_base.Get.byte"
+  | Char | Byte | Card8 -> "X11_base.Get.byte"
+  | Int8 -> "X11_base.Get.int8"
   | Int16 | Fd -> "X11_base.Get.int16"
   | Card16 -> "X11_base.Get.uint16"
   | Int32 -> "X11_base.Get.int32"
@@ -143,6 +144,10 @@ let is_request_struct_empty (rq : P2_fields.request_field list) =
 
 let is_struct_empty (fields : [> P2_fields.static_field ] list) =
   List.length (List.filter is_hidden_field fields) < 1
+
+let is_event : P2_fields.declaration -> bool = function
+  | `Event _ | `Event_alias _ -> true
+  | _ -> false
 
 let is_error : P2_fields.declaration -> bool = function
   | `Error _ | `Error_alias _ -> true
@@ -437,7 +442,7 @@ let generate (exts : P2_fields.extension String_map.t) out (ext : P2_fields.exte
           offset := !offset + size
         | `Field (field_name, P1_resolve.Prim (Types.Prim p)) ->
           fe "  %s buf %s%s;" (prim_put p)
-            params_prefix (identifier field_name);
+            params_prefix (Ident.record_field field_name);
           let size = Size.of_prim p |> Size.get_bounded_exn in
           offset := !offset + size
         | _ ->
@@ -446,6 +451,19 @@ let generate (exts : P2_fields.extension String_map.t) out (ext : P2_fields.exte
       pe "  ()"
 
   end;
+  let events = List.filter is_event ext.declarations in
+  if events <> [] then begin
+    pe "type events = [";
+    events |> List.iter begin function
+      | `Event (ev_name, _, _)
+      | `Event_alias (ev_name, _, _) ->
+        fe "  | `%s of %s_event" (Casing.caml ev_name) (Casing.snake ev_name)
+      | _ ->
+        assert false
+    end;
+    pe "]"
+  end;
+
   let errors = List.filter is_error ext.declarations in
   if errors <> [] then begin
     pe "type errors = [";

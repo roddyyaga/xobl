@@ -42,6 +42,7 @@ languages may easily be plugged in.
 * Clojure: [xcljb](https://github.com/geremih/xcljb)
 * Rust: [rust-xcb](https://github.com/sstewartgallus/rust-xcb)
 * Ruby: [alembic](https://github.com/nbaum/alembic)
+* Go: [xgb](https://github.com/BurntSushi/xgb)
 
 ## Xlib implementations (not generated) of note
 * Python: [python-xlib](https://github.com/python-xlib/python-xlib)

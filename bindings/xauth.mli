@@ -16,3 +16,5 @@ val read_entry : char Stream.t -> entry
 
 val get_best_auth : family:family -> address:string -> dpynum:string ->
   ?types:(string list) -> entry list -> (string * string) option
+
+val get_auth_path : unit -> string option

@@ -1,6 +1,8 @@
 (library
  (name xobl_bindings)
- (libraries lwt))
+ (libraries lwt containers)
+ (inline_tests)
+ (preprocess (pps ppx_inline_test)))
 
 (rule
  (deps (glob_files ../xproto/src/*.xml))

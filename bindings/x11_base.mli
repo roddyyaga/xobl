@@ -2,9 +2,9 @@ type xid
 
 type fd = int
 
-type ('l, 'r) either =
-  | Left of 'l
-  | Right of 'r
+type ('v, 't) variant_or =
+  | Variant of 'v
+  | Type of 'v
 
 type ('flags, 'vals) mask =
   | Flags of 'flags list
@@ -14,9 +14,10 @@ type ('flags, 'vals) mask =
 module Get : sig
   val byte : string -> int -> int
   val byte_int32 : string -> int -> int32
+  val int8 : string -> int -> int
   val uint16 : string -> int -> int
-  val uint32 : string -> int -> int32
   val int16 : string -> int -> int
+  val uint32 : string -> int -> int32
   val int32 : string -> int -> int32
   val bool : string -> int -> bool
   val xid : string -> int -> xid

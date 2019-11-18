@@ -36,7 +36,9 @@ val many1 : ('a, 'inp) parser -> ('a list, 'inp) parser
 
 val tuple2 : ('a, 'inp) parser -> ('b, 'inp) parser -> ('a * 'b, 'inp) parser
 
-val pipe : ('a, 'inp) parser -> ('a -> 'b) -> ('b, 'inp) parser
+val pipe : ('a -> 'b) -> ('a, 'inp) parser -> ('b, 'inp) parser
+
+val pipe_result : ('a -> ('b, error) result) -> ('a, 'inp) parser -> ('b, 'inp) parser
 
 val pipe2 :
   ('a, 'inp) parser ->

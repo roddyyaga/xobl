@@ -44,9 +44,15 @@ let tuple2 p1 p2 =
   let& res2 = p2 in
   return (res1, res2)
 
-let pipe p f =
+let pipe f p =
   let& res = p in
   return (f res)
+
+let pipe_result f p inp =
+  match p inp with
+  | Ok (v, rest) -> 
+    f v |> Result.map (fun v -> (v, rest))
+  | Error _ as err -> err
 
 let pipe2 p1 p2 f =
   let& res1 = p1 in
@@ -74,7 +80,7 @@ let many p inp =
       else
         loop (v :: acc) rest
     | Error _ ->
-      Ok (acc, inp)
+      Ok (List.rev acc, inp)
   in
   loop [] inp
 
@@ -111,5 +117,8 @@ module Xml = struct
 
   let el_end = apply @@ function
     | `El_end -> Ok ()
-    | _ -> Error "expected `El_end"
+    | `El_start _ -> Error "expected `El_end, received `El_start"
+    | `Data data -> Error ("expected `El_end, received `Data \"" ^ data ^ "\"")
+    | `Dtd _ -> Error "expect `El_end, received `Dtd"
+    (* | _ -> Error "expected `El_end" *)
 end

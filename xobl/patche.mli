@@ -59,7 +59,9 @@ module Xml : sig
 
   val dtd : (Xmlm.dtd, Xmlm.signal) parser
 
-  val el_start : string -> (Xmlm.attribute list, Xmlm.signal) parser
+  val el_start : string -> 'a Attr.t -> ('a, Xmlm.signal) parser
+
+  val el_start_empty : string -> (unit, Xmlm.signal) parser
 
   val el_end : (unit, Xmlm.signal) parser
 end

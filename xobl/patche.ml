@@ -111,8 +111,13 @@ module Xml = struct
     | `Dtd dtd -> Ok dtd
     | _ -> Error "expected `Dtd"
 
-  let el_start name = apply @@ function
-    | `El_start ((_, n), attrs) when n = name -> Ok attrs
+  let el_start name attr = apply @@ function
+    | `El_start ((_, n), attrs) when n = name ->
+      attr attrs
+    | _ -> Error ("expected `El_start: " ^ name)
+
+  let el_start_empty name = apply @@ function
+    | `El_start ((_, n), []) when n = name -> Ok ()
     | _ -> Error ("expected `El_start: " ^ name)
 
   let el_end = apply @@ function

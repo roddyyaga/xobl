@@ -91,7 +91,7 @@ type expression =
         [(name, type)] *)
   | Enum_ref of string * string
     (** The value of an identifier in an enum. [(enum, item)] *)
-  | Sum_of string * expression option
+  | Sum_of of string * expression option
     (** Sum f the elements in a list field in the same structure.
         If present, the expression is applied to each list element
         in the element's context before summing it. *)
@@ -159,7 +159,7 @@ type declaration =
   | Event_no_sequence_number of string * int * field list
   | Event_alias of string * int * string
   | Error of string * int * field list
-  | Error_alias of 
+  | Error_alias of string * int * string
   | Struct of string * field list
   | Union of string * field list
   | Request of string * int * bool * field list * field list
@@ -176,4 +176,4 @@ type protocol_file =
   | Core of declaration list
   | Extension of module_info * declaration list
 
-val parse_file : string -> protocol file
+(* val parse_file : string -> protocol_file *)

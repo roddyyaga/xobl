@@ -16,6 +16,11 @@ let any inp =
   | Lazy_list.Cons (v, rest) -> Ok (v, rest)
   | Lazy_list.Nil -> Error "empty"
 
+let eoi inp  =
+  match Lazy.force inp with
+  | Lazy_list.Nil -> Ok ((), inp)
+  | Lazy_list.Cons _ -> Error "not eoi"
+
 
 (** {2 Combinators} *)
 

@@ -14,6 +14,8 @@ val error : error -> ('t, 'inp) parser
 
 val any : ('inp, 'inp) parser
 
+val eoi : (unit, 'inp) parser
+
 
 (** {2 Combinators} *)
 val bind : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser

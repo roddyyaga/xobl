@@ -102,34 +102,33 @@ let bool name attrs =
     | Error _ as err -> err
 
 
+let eoi = function
+  | [] -> Ok ()
+  | _ -> Error "trailing elements detected"
+
+
 let ( let* ) = Result.bind
 
 
 let return p attrs =
   let* a, attrs = p attrs in
-  if attrs = [] then
-    Ok a
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok a
 
 
 let tuple2 p1 p2 attrs =
   let* a1, attrs = p1 attrs in
   let* a2, attrs = p2 attrs in
-  if attrs = [] then
-    Ok (a1, a2)
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok (a1, a2)
 
 
 let tuple3 p1 p2 p3 attrs =
   let* a1, attrs = p1 attrs in
   let* a2, attrs = p2 attrs in
   let* a3, attrs = p3 attrs in
-  if attrs = [] then
-    Ok (a1, a2, a3)
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok (a1, a2, a3)
 
 
 let tuple4 p1 p2 p3 p4 attrs =
@@ -137,37 +136,29 @@ let tuple4 p1 p2 p3 p4 attrs =
   let* a2, attrs = p2 attrs in
   let* a3, attrs = p3 attrs in
   let* a4, attrs = p4 attrs in
-  if attrs = [] then
-    Ok (a1, a2, a3, a4)
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok (a1, a2, a3, a4)
 
 
 let map f p attrs =
   let* a, attrs = p attrs in
-  if attrs = [] then
-    Ok (f a)
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok (f a)
 
 
 let map2 f p1 p2 attrs =
   let* a1, attrs = p1 attrs in
   let* a2, attrs = p2 attrs in
-  if attrs = [] then
-    Ok (f a1 a2)
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok (f a1 a2)
 
 
 let map3 f p1 p2 p3 attrs =
   let* a1, attrs = p1 attrs in
   let* a2, attrs = p2 attrs in
   let* a3, attrs = p3 attrs in
-  if attrs = [] then
-    Ok (f a1 a2 a3)
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok (f a1 a2 a3)
 
 
 let map4 f p1 p2 p3 p4 attrs =
@@ -175,10 +166,8 @@ let map4 f p1 p2 p3 p4 attrs =
   let* a2, attrs = p2 attrs in
   let* a3, attrs = p3 attrs in
   let* a4, attrs = p4 attrs in
-  if attrs = [] then
-    Ok (f a1 a2 a3 a4)
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok (f a1 a2 a3 a4)
 
 
 let map5 f p1 p2 p3 p4 p5 attrs =
@@ -187,10 +176,8 @@ let map5 f p1 p2 p3 p4 p5 attrs =
   let* a3, attrs = p3 attrs in
   let* a4, attrs = p4 attrs in
   let* a5, attrs = p5 attrs in
-  if attrs = [] then
-    Ok (f a1 a2 a3 a4 a5)
-  else
-    Error "trailing elements detected"
+  let* () = eoi attrs in
+  Ok (f a1 a2 a3 a4 a5)
 
 
 (* let map6 f p1 p2 p3 p4 p5 p6 attrs =

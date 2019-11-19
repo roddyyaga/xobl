@@ -17,8 +17,14 @@ let named name = function
   | _ -> None
 
 
-let map_fst f (a, b) =
-  f a |> Result.map (fun v -> v, b)
+let optional name ls =
+  Ok (list_pry (named name) ls)
+
+
+let required name ls =
+  match list_pry (named name) ls with
+  | Some v, rest -> Ok (v, rest)
+  | None, _ -> Error (Printf.sprintf "couldn't find attribute '%s'" name)
 
 
 type error = string
@@ -33,55 +39,52 @@ type 'a parser = input -> ('a * Xmlm.attribute list, error) result
 type 'a t = input -> ('a, error) result
 
 
-let str_o name attrs =
-  list_pry (named name) attrs
-  |> map_fst Result.ok
+let return v inp = Ok (v, inp)
+
+let error msg _ = Error msg
+
+let lift = function
+  | Ok v -> return v
+  | Error msg  -> error msg
+
+let ( let& ) p f inp =
+  match p inp with
+  | Ok (v, rest) -> f v rest
+  | Error _ as e -> e
 
 
-let str name attrs =
-  list_pry (named name) attrs
-  |> map_fst @@ Option.to_result ~none:(
-    Printf.sprintf "couldn't find attribute '%s'" name
-  )
+let opt_conv v f err =
+  match v with
+  | None -> return None
+  | Some v ->
+    match f v with
+    | Some i -> return (Some i)
+    | None -> error (err v)
 
 
-let int_o name attrs =
-  list_pry (named name) attrs
-  |> map_fst @@ function
-    | None -> Ok None
-    | Some v ->
-      match int_of_string_opt v with
-      | Some i -> Ok (Some i)
-      | None -> Error (
-        Printf.sprintf "failed to convert attribute '%s' to int: %S" name v
-      )
+let str_o = optional
+
+let str = required
 
 
-let int name attrs =
-  let res, rest = list_pry (named name) attrs in
-  res
+let int_o name =
+  let& v = optional name in
+  opt_conv v int_of_string_opt 
+    (Printf.sprintf "failed to convert attribute '%s' to int: %S" name)
+
+let int name =
+  let& v = required name in
+  int_of_string_opt v
   |> Option.to_result ~none:(
-    Printf.sprintf "couldn't find attribute '%s'" name
-  )
-  |> fun x -> Result.bind x (fun v ->
-    int_of_string_opt v
-    |> Option.to_result ~none:(
       Printf.sprintf "failed to convert attribute '%s' to int: %S" name v
     )
-  )
-  |> Result.map (fun v -> v, rest)
+  |> lift
 
 
-let bool_o name attrs =
-  list_pry (named name) attrs
-  |> map_fst @@ function
-    | None -> Ok None
-    | Some v ->
-      match bool_of_string_opt v with
-      | Some b -> Ok (Some b)
-      | None -> Error (
-        Printf.sprintf "failed to convert attribute '%s' to bool: %S" name v
-      )
+let bool_o name =
+  let& v = optional name in
+  opt_conv v bool_of_string_opt
+    (Printf.sprintf "failed to convert attribute '%s' to bool: %S" name)
 
 
 let bool_f name attrs =
@@ -105,6 +108,9 @@ let bool name attrs =
 let eoi = function
   | [] -> Ok ()
   | _ -> Error "trailing elements detected"
+
+
+let empty = eoi
 
 
 let ( let* ) = Result.bind
@@ -180,14 +186,12 @@ let map5 f p1 p2 p3 p4 p5 attrs =
   Ok (f a1 a2 a3 a4 a5)
 
 
-(* let map6 f p1 p2 p3 p4 p5 p6 attrs =
+let map6 f p1 p2 p3 p4 p5 p6 attrs =
   let* a1, attrs = p1 attrs in
   let* a2, attrs = p2 attrs in
   let* a3, attrs = p3 attrs in
   let* a4, attrs = p4 attrs in
   let* a5, attrs = p5 attrs in
   let* a6, attrs = p6 attrs in
-  if attrs = [] then
-    Ok (f a1 a2 a3 a4 a5 a6)
-  else
-    Error "trailing elements detected" *)
+  let* () = eoi attrs in
+  Ok (f a1 a2 a3 a4 a5 a6)

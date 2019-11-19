@@ -31,8 +31,8 @@ let bind parser f inp =
 
 let ( let& ) = bind
 
-let satisfies test =
-  let& res = any in
+let satisfies test p =
+  let& res = p in
   if test res then
     return res
   else
@@ -52,6 +52,8 @@ let tuple2 p1 p2 =
 let pipe f p =
   let& res = p in
   return (f res)
+
+let ( %> ) p f = pipe f p
 
 let pipe_result f p inp =
   match p inp with
@@ -106,6 +108,8 @@ let ( >>& ) p1 p2 =
   let& _ = p1 in
   p2
 
+let ( &>>& ) = tuple2
+
 
 module Xml = struct
   let data = apply @@ function
@@ -130,5 +134,13 @@ module Xml = struct
     | `El_start _ -> Error "expected `El_end, received `El_start"
     | `Data data -> Error ("expected `El_end, received `Data \"" ^ data ^ "\"")
     | `Dtd _ -> Error "expect `El_end, received `Dtd"
-    (* | _ -> Error "expected `El_end" *)
+
+  let el name body =
+    el_start_empty name >>& body &>> el_end
+
+  let el_empty name attr =
+    el_start name attr &>> el_end
+
+  let el_attr name attr body =
+    el_start name attr &>>& body &>> el_end
 end

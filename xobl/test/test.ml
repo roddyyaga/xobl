@@ -9,15 +9,26 @@ let inp str =
 
 let test_parse _ =
   let i = inp {xml|
-<xcb>
+<xcb header="xproto">
   <import>ayy</import>
   <import>tfw</import>
   <xidtype name="xid" />
+  <xidunion name="DRAWABLE">
+    <type>WINDOW</type>
+    <type>PIXMAP</type>
+  </xidunion>
+  <typedef oldname="CARD32" newname="BOOL32" />
+  <eventcopy name="KeyRelease" number="3" ref="KeyPress" />
 </xcb>
   |xml} in
   match Parser.x i with
   | Ok (res, _) ->
-    assert_equal [`Import "ayy"; `Import "tfw"; `Xidtype "xid"] res
+    assert_equal (Parser.Core
+      [ `Import "ayy"; `Import "tfw"; `Xidtype "xid"
+      ; `Xidunion ("DRAWABLE", ["WINDOW"; "PIXMAP"])
+      ; `Typedef ("BOOL32", "CARD32")
+      ; `Eventcopy ("KeyRelease", 3, "KeyPress")
+      ]) res
   | Error err ->
     assert_failure err
 

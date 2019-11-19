@@ -22,7 +22,7 @@ val bind : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
 
 val ( let& ) : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
 
-val satisfies : ('inp -> bool) -> ('inp, 'inp) parser
+val satisfies : ('a -> bool) -> ('a, 'inp) parser -> ('a, 'inp) parser
 
 val ( <|> ) : ('a, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
@@ -40,6 +40,8 @@ val tuple2 : ('a, 'inp) parser -> ('b, 'inp) parser -> ('a * 'b, 'inp) parser
 
 val pipe : ('a -> 'b) -> ('a, 'inp) parser -> ('b, 'inp) parser
 
+val ( %> ) : ('a, 'inp) parser -> ('a -> 'b) -> ('b, 'inp) parser
+
 val pipe_result : ('a -> ('b, error) result) -> ('a, 'inp) parser -> ('b, 'inp) parser
 
 val pipe2 :
@@ -55,6 +57,8 @@ val ( &>> ) : ('a, 'inp) parser -> ('b, 'inp) parser -> ('a, 'inp) parser
 
 val ( >>& ) : ('a, 'inp) parser -> ('b, 'inp) parser -> ('b, 'inp) parser
 
+val ( &>>& ) : ('a, 'inp) parser -> ('b, 'inp) parser -> ('a * 'b, 'inp) parser
+
 
 module Xml : sig
   val data : (string, Xmlm.signal) parser
@@ -66,4 +70,10 @@ module Xml : sig
   val el_start_empty : string -> (unit, Xmlm.signal) parser
 
   val el_end : (unit, Xmlm.signal) parser
+
+  val el : string -> ('a, Xmlm.signal) parser -> ('a, Xmlm.signal) parser
+
+  val el_empty : string -> 'a Attr.t -> ('a, Xmlm.signal) parser
+
+  val el_attr : string -> 'a Attr.t -> ('b, Xmlm.signal) parser -> ('a * 'b, Xmlm.signal) parser
 end

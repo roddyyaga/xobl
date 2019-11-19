@@ -22,6 +22,8 @@ val bool_f : string -> bool parser
 
 val bool : string -> bool parser
 
+val empty : input -> (unit, error) result
+
 val return : 'a parser
   -> input -> ('a, error) result
 
@@ -53,3 +55,7 @@ val map4 : ('a -> 'b -> 'c -> 'd -> 'e)
 val map5 : ('a -> 'b -> 'c -> 'd -> 'e -> 'f)
   -> 'a parser -> 'b parser -> 'c parser -> 'd parser -> 'e parser
   -> input -> ('f, error) result
+
+val map6 : ('a -> 'b -> 'c -> 'd -> 'e -> 'f -> 'g)
+  -> 'a parser -> 'b parser -> 'c parser -> 'd parser -> 'e parser -> 'f parser
+  -> input -> ('g, error) result

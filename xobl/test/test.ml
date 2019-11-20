@@ -19,6 +19,7 @@ let test_parse _ =
   </xidunion>
   <typedef oldname="CARD32" newname="BOOL32" />
   <eventcopy name="KeyRelease" number="3" ref="KeyPress" />
+  <errorcopy name="Window" number="3" ref="Value" />
 </xcb>
   |xml} in
   match Parser.x i with
@@ -28,6 +29,7 @@ let test_parse _ =
       ; `Xidunion ("DRAWABLE", ["WINDOW"; "PIXMAP"])
       ; `Typedef ("BOOL32", "CARD32")
       ; `Eventcopy ("KeyRelease", 3, "KeyPress")
+      ; `Errorcopy ("Window", 3, "Value")
       ]) res
   | Error err ->
     assert_failure err

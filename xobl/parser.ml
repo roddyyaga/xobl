@@ -6,10 +6,18 @@ type toplevel =
   | `Xidtype of string
   | `Xidunion of string * string list
   | `Typedef of string * string
-  | `Eventcopy of string * int * string ]
+  | `Eventcopy of string * int * string
+  | `Errorcopy of string * int * string
+  ]
 
 let mk_import i = `Import i
 let mk_xidtype t = `Xidtype t
+let mk_xidunion (name, union) = `Xidunion (name, union)
+let mk_typedef (new_name, old_name) = `Typedef (new_name, old_name)
+let mk_eventcopy (new_name, number, old_name) =
+  `Eventcopy (new_name, number, old_name)
+let mk_errorcopy (new_name, number, old_name) =
+  `Errorcopy (new_name, number, old_name)
 
 type extension_info =
   { name : string
@@ -24,30 +32,31 @@ type protocol_file =
 
 let import =
   el "import" data
-  %> mk_import
+  => mk_import
 
 let xidtype =
   el_empty "xidtype" Attr.(return (str "name"))
-  %> mk_xidtype
+  => mk_xidtype
 
 let xidunion =
-  let typ = el_start_empty "type" >>& data &>> el_end in
-  el_attr "xidunion" Attr.(return (str "name")) (many typ)
-  %> (fun (name, union) -> `Xidunion (name, union))
+  el_attr "xidunion" Attr.(return (str "name")) (many (el "type" data))
+  => mk_xidunion
 
 let typedef =
-  el_start "typedef" Attr.(tuple2 (str "newname") (str "oldname")) &>> el_end
-  |> pipe (fun (new_name, old_name) -> `Typedef (new_name, old_name))
+  el_empty "typedef" Attr.(tuple2 (str "newname") (str "oldname"))
+  => mk_typedef
+
+let copy name =
+  el_empty name Attr.(tuple3 (str "name") (int "number") (str "ref"))
 
 let eventcopy =
-  el_start "eventcopy" Attr.(tuple3 (str "name") (int "number") (str "ref"))
-  &>> el_end
-  |> pipe
-    (fun (new_name, number, old_name) ->
-      `Eventcopy (new_name, number, old_name))
+  copy "eventcopy" => mk_eventcopy
+
+let errorcopy =
+  copy "errorcopy" => mk_errorcopy
 
 let declaration =
-  import <|> xidtype <|> xidunion <|> typedef <|> eventcopy
+  import <|> xidtype <|> xidunion <|> typedef <|> eventcopy <|> errorcopy
 
 let core =
   let attrs = Attr.(return (str "header")) in

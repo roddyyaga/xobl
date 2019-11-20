@@ -53,7 +53,7 @@ let pipe f p =
   let& res = p in
   return (f res)
 
-let ( %> ) p f = pipe f p
+let ( => ) p f = pipe f p
 
 let pipe_result f p inp =
   match p inp with

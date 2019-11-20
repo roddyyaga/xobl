@@ -46,6 +46,16 @@ let ( <|> ) p1 p2 inp =
 let rec fix p inp =
   p (fix p) inp
 
+let choice ps inp =
+  let rec loop = function
+    | [] -> Error "no parser matched"
+    | p :: ps ->
+      match p inp with
+      | Ok _ as ok -> ok
+      | Error _ -> loop ps
+  in
+  loop ps
+
 
 let tuple2 p1 p2 =
   let& res1 = p1 in

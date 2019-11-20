@@ -28,6 +28,8 @@ val ( <|> ) : ('a, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
 val fix : (('a, 'inp) parser -> ('a, 'inp) parser) -> ('a, 'inp) parser
 
+val choice : ('a, 'inp) parser list -> ('a, 'inp) parser
+
 
 val apply : ('inp -> ('a, error) result) -> ('a, 'inp) parser
 

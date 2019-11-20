@@ -103,11 +103,19 @@ let expression = fix @@ fun expression ->
   let value =
     el "value" data |> pipe_result try_parse_int => mk_value
   in
-  unop <|> value
+  choice [ value; unop ]
 
 let declaration =
-  import <|> xidtype <|> xidunion <|> typedef <|> enum
-  <|> eventcopy <|> errorcopy <|> eventstruct
+  choice
+    [ import
+    ; xidtype
+    ; xidunion
+    ; typedef
+    ; enum
+    ; eventcopy
+    ; errorcopy
+    ; eventstruct
+    ]
 
 let core =
   let attrs = Attr.(return (str "header")) in

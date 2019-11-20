@@ -1,12 +1,29 @@
 open Patche
 open Patche.Xml
+open Patche.Infix
 
 type expression =
-  [ `Unop of string * expression
-  | `Value of int ]
+  [ `Binop of string * expression * expression
+  | `Unop of string * expression
+  | `Fieldref of string
+  | `Paramref of string * string
+  | `Enumref of string * string
+  | `Popcount of expression
+  | `Sumof of string * expression option
+  | `Listelement_ref
+  | `Value of int
+  | `Bit of int
+  ]
 
+let mk_binop (op, (e1, e2)) = `Binop (op, e1, e2)
 let mk_unop (op, e) = `Unop (op, e)
+let mk_fieldref n = `Fieldref n
+let mk_paramref (t, n) = `Paramref (n, t)
+let mk_enumref (n, e) = `Enumref (n, e)
 let mk_value v = `Value v
+let mk_sumof (n, e) = `Sumof (n, e)
+let mk_bit b = `Bit b
+let mk_popcount e = `Popcount e
 
 let mk_expression e = `Expression e
 
@@ -48,12 +65,12 @@ let mk_core d = Core d
 let mk_extension (info, d) = Extension (info, d)
 
 let import =
-  el "import" data
-  => mk_import
+  let& import = el "import" data in
+  return (`Import import)
 
 let xidtype =
-  el_empty "xidtype" Attr.(return (str "name"))
-  => mk_xidtype
+  let& name = el_empty "xidtype" Attr.(return (str "name")) in
+  return (`Xidtype name)
 
 let xidunion =
   el_attr "xidunion" Attr.(return (str "name")) (many (el "type" data))
@@ -96,14 +113,53 @@ let eventstruct =
   => mk_eventstruct
 
 let expression = fix @@ fun expression ->
+  let binop =
+    el_attr "op" Attr.(return (str "op")) (expression &>>& expression)
+    => mk_binop
+  in
   let unop =
     el_attr "unop" Attr.(return (str "op")) expression
     => mk_unop
   in
+  let fieldref =
+    el "fieldref" data => mk_fieldref
+  in
+  let paramref =
+    el_attr "paramref" Attr.(return (str "type")) data
+    => mk_paramref
+  in
+  let enumref =
+    el_attr "enumref" Attr.(return (str "ref")) data
+    => mk_enumref
+  in
+  let popcount =
+    el "popcount" expression => mk_popcount
+  in
+  let sumof =
+    el_attr "sumof" Attr.(return (str "ref")) (opt data)
+    => mk_sumof
+  in
+  let listelement_ref =
+    el_unit "listelement-ref"|> discard_with `Listelement_ref
+  in
   let value =
     el "value" data |> pipe_result try_parse_int => mk_value
   in
-  choice [ value; unop ]
+  let bit =
+    el "bit" data |> pipe_result try_parse_int => mk_value
+  in
+  choice
+    [ binop
+    ; unop
+    ; fieldref
+    ; paramref
+    ; enumref
+    ; popcount
+    ; sumof
+    ; listelement_ref
+    ; value
+    ; bit
+    ]
 
 let declaration =
   choice

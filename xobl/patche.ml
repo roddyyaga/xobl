@@ -31,6 +31,10 @@ let bind parser f inp =
 
 let ( let& ) = bind
 
+module Infix = struct
+  let ( let& ) = bind
+end
+
 let satisfies test p =
   let& res = p in
   if test res then
@@ -108,7 +112,7 @@ let many1 p =
   pipe2 p (many p) (fun hd tl -> hd :: tl)
 
 
-let discard_with p v =
+let discard_with v p =
   let& _ = p in
   return v
 
@@ -156,4 +160,7 @@ module Xml = struct
 
   let el_attr name attr body =
     el_start name attr &>>& body &>> el_end
+
+  let el_unit name =
+    el_start_empty name >>& el_end
 end

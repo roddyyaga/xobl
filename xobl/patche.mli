@@ -18,9 +18,11 @@ val eoi : (unit, 'inp) parser
 
 
 (** {2 Combinators} *)
-val bind : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
+module Infix : sig
+  val ( let& ) : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
+end
 
-val ( let& ) : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
+val bind : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
 
 val satisfies : ('a -> bool) -> ('a, 'inp) parser -> ('a, 'inp) parser
 
@@ -55,11 +57,11 @@ val pipe2 :
   ('c, 'inp) parser
 
 
-val discard_with : ('a, 'inp) parser -> 'b -> ('b, 'inp) parser
+val discard_with : 'a -> (_, 'inp) parser -> ('a, 'inp) parser
 
-val ( &>> ) : ('a, 'inp) parser -> ('b, 'inp) parser -> ('a, 'inp) parser
+val ( &>> ) : ('a, 'inp) parser -> (_, 'inp) parser -> ('a, 'inp) parser
 
-val ( >>& ) : ('a, 'inp) parser -> ('b, 'inp) parser -> ('b, 'inp) parser
+val ( >>& ) : (_, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
 val ( &>>& ) : ('a, 'inp) parser -> ('b, 'inp) parser -> ('a * 'b, 'inp) parser
 
@@ -80,4 +82,6 @@ module Xml : sig
   val el_empty : string -> 'a Attr.t -> ('a, Xmlm.signal) parser
 
   val el_attr : string -> 'a Attr.t -> ('b, Xmlm.signal) parser -> ('a * 'b, Xmlm.signal) parser
+
+  val el_unit : string -> (unit, Xmlm.signal) parser
 end

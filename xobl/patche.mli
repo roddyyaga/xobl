@@ -26,6 +26,8 @@ val satisfies : ('a -> bool) -> ('a, 'inp) parser -> ('a, 'inp) parser
 
 val ( <|> ) : ('a, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
+val fix : (('a, 'inp) parser -> ('a, 'inp) parser) -> ('a, 'inp) parser
+
 
 val apply : ('inp -> ('a, error) result) -> ('a, 'inp) parser
 

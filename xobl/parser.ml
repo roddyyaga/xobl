@@ -1,6 +1,15 @@
 open Patche
 open Patche.Xml
 
+type expression =
+  [ `Unop of string * expression
+  | `Value of int ]
+
+let mk_unop (op, e) = `Unop (op, e)
+let mk_value v = `Value v
+
+let mk_expression e = `Expression e
+
 type toplevel =
   [ `Import of string
   | `Xidtype of string
@@ -35,6 +44,9 @@ type protocol_file =
   | Core of toplevel list
   | Extension of extension_info * toplevel list
 
+let mk_core d = Core d
+let mk_extension (info, d) = Extension (info, d)
+
 let import =
   el "import" data
   => mk_import
@@ -51,9 +63,13 @@ let typedef =
   el_empty "typedef" Attr.(tuple2 (str "newname") (str "oldname"))
   => mk_typedef
 
+let try_parse_int s =
+  int_of_string_opt s
+  |> Option.to_result ~none:"failed to parse int"
+
 let try_parse_int64 s =
   Int64.of_string_opt s
-  |> Option.to_result ~none:"failed to parse to int64"
+  |> Option.to_result ~none:"failed to parse int64"
 
 let enum =
   el_attr "enum" Attr.(return (str "name"))
@@ -79,6 +95,16 @@ let eventstruct =
     ))
   => mk_eventstruct
 
+let expression = fix @@ fun expression ->
+  let unop =
+    el_attr "unop" Attr.(return (str "op")) expression
+    => mk_unop
+  in
+  let value =
+    el "value" data |> pipe_result try_parse_int => mk_value
+  in
+  unop <|> value
+
 let declaration =
   import <|> xidtype <|> xidunion <|> typedef <|> enum
   <|> eventcopy <|> errorcopy <|> eventstruct
@@ -87,7 +113,7 @@ let core =
   let attrs = Attr.(return (str "header")) in
   let xcb_xproto = el_start "xcb" attrs |> satisfies (( = ) "xproto") in
   xcb_xproto >>& many declaration &>> el_end
-  |> pipe (fun d -> Core d)
+  => mk_core
 
 let extension =
   let attrs =
@@ -104,7 +130,7 @@ let extension =
       (Attr.int "minor-version")
   in
   el_start "xcb" attrs &>>& many declaration &>> el_end
-  |> pipe (fun (info, decls) -> Extension (info, decls))
+  => mk_extension
 
 let x =
   dtd >>& core <|> extension &>> eoi

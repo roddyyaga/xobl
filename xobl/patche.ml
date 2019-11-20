@@ -43,6 +43,9 @@ let ( <|> ) p1 p2 inp =
   | Ok _ as ok -> ok
   | Error _ -> p2 inp
 
+let rec fix p inp =
+  p (fix p) inp
+
 
 let tuple2 p1 p2 =
   let& res1 = p1 in

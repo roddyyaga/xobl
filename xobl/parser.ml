@@ -8,6 +8,7 @@ type toplevel =
   | `Typedef of string * string
   | `Eventcopy of string * int * string
   | `Errorcopy of string * int * string
+  | `Eventstruct of string * (string * bool * (int * int)) list
   ]
 
 let mk_import i = `Import i
@@ -18,6 +19,8 @@ let mk_eventcopy (new_name, number, old_name) =
   `Eventcopy (new_name, number, old_name)
 let mk_errorcopy (new_name, number, old_name) =
   `Errorcopy (new_name, number, old_name)
+let mk_allowed_eventstruct ext xge min max = ext, xge, (min, max)
+let mk_eventstruct (name, allowed) = `Eventstruct (name, allowed)
 
 type extension_info =
   { name : string
@@ -55,8 +58,17 @@ let eventcopy =
 let errorcopy =
   copy "errorcopy" => mk_errorcopy
 
+let eventstruct =
+  el_attr "eventstruct" Attr.(return (str "name"))
+    (many (el_empty "allowed" Attr.(map4 mk_allowed_eventstruct
+      (str "extension") (bool "xge")
+      (int "opcode-min") (int "opcode-max"))
+    ))
+  => mk_eventstruct
+
 let declaration =
-  import <|> xidtype <|> xidunion <|> typedef <|> eventcopy <|> errorcopy
+  import <|> xidtype <|> xidunion <|> typedef
+  <|> eventcopy <|> errorcopy <|> eventstruct
 
 let core =
   let attrs = Attr.(return (str "header")) in
@@ -83,6 +95,3 @@ let extension =
 
 let x =
   dtd >>& core <|> extension &>> eoi
-  (*
-  dtd >>& el_start_empty "xcb" >>& many (import <|> xidtype) &>> el_end
-  *)

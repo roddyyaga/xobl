@@ -20,6 +20,9 @@ let test_parse _ =
   <typedef oldname="CARD32" newname="BOOL32" />
   <eventcopy name="KeyRelease" number="3" ref="KeyPress" />
   <errorcopy name="Window" number="3" ref="Value" />
+  <eventstruct name="EventForSend">
+    <allowed extension="Input" xge="false" opcode-min="0" opcode-max="16" />
+  </eventstruct>
 </xcb>
   |xml} in
   match Parser.x i with
@@ -30,6 +33,7 @@ let test_parse _ =
       ; `Typedef ("BOOL32", "CARD32")
       ; `Eventcopy ("KeyRelease", 3, "KeyPress")
       ; `Errorcopy ("Window", 3, "Value")
+      ; `Eventstruct ("EventForSend", ["Input", false, (0, 16)])
       ]) res
   | Error err ->
     assert_failure err

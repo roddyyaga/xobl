@@ -6,6 +6,7 @@ type toplevel =
   | `Xidtype of string
   | `Xidunion of string * string list
   | `Typedef of string * string
+  | `Enum of string * (string * int64) list
   | `Eventcopy of string * int * string
   | `Errorcopy of string * int * string
   | `Eventstruct of string * (string * bool * (int * int)) list
@@ -21,6 +22,7 @@ let mk_errorcopy (new_name, number, old_name) =
   `Errorcopy (new_name, number, old_name)
 let mk_allowed_eventstruct ext xge min max = ext, xge, (min, max)
 let mk_eventstruct (name, allowed) = `Eventstruct (name, allowed)
+let mk_enum (name, items) = `Enum (name, items)
 
 type extension_info =
   { name : string
@@ -49,6 +51,17 @@ let typedef =
   el_empty "typedef" Attr.(tuple2 (str "newname") (str "oldname"))
   => mk_typedef
 
+let try_parse_int64 s =
+  Int64.of_string_opt s
+  |> Option.to_result ~none:"failed to parse to int64"
+
+let enum =
+  el_attr "enum" Attr.(return (str "name"))
+    (many (el_attr "item" Attr.(return (str "name"))
+      (el "value" data |> pipe_result try_parse_int64)
+    ))
+  => mk_enum
+
 let copy name =
   el_empty name Attr.(tuple3 (str "name") (int "number") (str "ref"))
 
@@ -67,7 +80,7 @@ let eventstruct =
   => mk_eventstruct
 
 let declaration =
-  import <|> xidtype <|> xidunion <|> typedef
+  import <|> xidtype <|> xidunion <|> typedef <|> enum
   <|> eventcopy <|> errorcopy <|> eventstruct
 
 let core =

@@ -23,6 +23,10 @@ let test_parse _ =
   <eventstruct name="EventForSend">
     <allowed extension="Input" xge="false" opcode-min="0" opcode-max="16" />
   </eventstruct>
+  <enum name="DeviceUse">
+    <item name="IsXPointer"> <value>0</value></item>
+    <item name="IsXKeyboard"><value>1</value></item>
+  </enum>
 </xcb>
   |xml} in
   match Parser.x i with
@@ -34,6 +38,7 @@ let test_parse _ =
       ; `Eventcopy ("KeyRelease", 3, "KeyPress")
       ; `Errorcopy ("Window", 3, "Value")
       ; `Eventstruct ("EventForSend", ["Input", false, (0, 16)])
+      ; `Enum ("DeviceUse", [("IsXPointer", 0L); ("IsXKeyboard", 1L)])
       ]) res
   | Error err ->
     assert_failure err

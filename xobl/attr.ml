@@ -3,11 +3,11 @@ let list_pry f =
     | [] ->
       None, List.rev prev
     | el :: rest ->
-      match f el with
-      | Some el ->
-        Some el, List.rev_append prev rest
-      | None ->
-        loop (el :: prev) rest
+    match f el with
+    | Some el ->
+      Some el, List.rev_append prev rest
+    | None ->
+      loop (el :: prev) rest
   in
   loop []
 
@@ -57,9 +57,9 @@ let opt_conv v f err =
   match v with
   | None -> return None
   | Some v ->
-    match f v with
-    | Some i -> return (Some i)
-    | None -> error (err v)
+  match f v with
+  | Some i -> return (Some i)
+  | None -> error (err v)
 
 
 let str_o = optional

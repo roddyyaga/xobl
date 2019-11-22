@@ -181,11 +181,11 @@ let core =
 
 let extension =
   let attrs =
-    let extension_info name file_name query_name multiword major minor =
+    let mk_extension_info name file_name query_name multiword major minor =
       let version = major, minor in
       { name; file_name; query_name; multiword; version }
     in
-    Attr.map6 extension_info
+    Attr.map6 mk_extension_info
       (Attr.str "extension-name")
       (Attr.str "header")
       (Attr.str "extension-xname")
@@ -197,4 +197,4 @@ let extension =
   => mk_extension
 
 let x =
-  dtd >>& core <|> extension &>> eoi
+  dtd >>& (core <|> extension) &>> eoi

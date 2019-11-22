@@ -9,7 +9,10 @@ let inp str =
 
 let test_parse _ =
   let i = inp {xml|
-<xcb header="xproto">
+<xcb
+  header="xkb" extension-xname="XKEYBOARD" extension-name="xkb"
+  major-version="1" minor-version="0"
+>
   <import>ayy</import>
   <import>tfw</import>
   <xidtype name="xid" />
@@ -31,15 +34,20 @@ let test_parse _ =
   |xml} in
   match Parser.x i with
   | Ok (res, _) ->
-    assert_equal (Parser.Core
-      [ `Import "ayy"; `Import "tfw"; `Xidtype "xid"
+    assert_equal (Parser.Extension (
+      { name = "xkb"; file_name = "xkb"; query_name = "XKEYBOARD"
+      ; multiword = false; version = (1, 0)
+      },
+      [ `Import "ayy"
+      ; `Import "tfw"
+      ; `Xidtype "xid"
       ; `Xidunion ("DRAWABLE", ["WINDOW"; "PIXMAP"])
       ; `Typedef ("BOOL32", "CARD32")
       ; `Eventcopy ("KeyRelease", 3, "KeyPress")
       ; `Errorcopy ("Window", 3, "Value")
       ; `Eventstruct ("EventForSend", ["Input", false, (0, 16)])
       ; `Enum ("DeviceUse", [("IsXPointer", 0L); ("IsXKeyboard", 1L)])
-      ]) res
+      ])) res
   | Error err ->
     assert_failure err
 

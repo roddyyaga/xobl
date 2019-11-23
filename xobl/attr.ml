@@ -105,6 +105,22 @@ let bool name attrs =
     | Error _ as err -> err
 
 
+let ( <|> ) a1 a2 attrs =
+  match a1 attrs with
+  | Ok _ as ok -> ok
+  | Error _ -> a2 attrs
+
+let ( => ) p f inp =
+  match p inp with
+  | Ok (result, rest) -> Ok (f result, rest)
+  | Error _ as e -> e
+
+let or_ o p inp =
+  match p inp with
+  | Ok (result, rest) -> Ok (Some result, rest)
+  | Error _ -> Ok (o, inp)
+
+
 let eoi = function
   | [] -> Ok ()
   | _ -> Error "trailing elements detected"

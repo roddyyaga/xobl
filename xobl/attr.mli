@@ -22,6 +22,12 @@ val bool_f : string -> bool parser
 
 val bool : string -> bool parser
 
+val ( <|> ) : 'a parser -> 'a parser -> 'a parser
+
+val ( => ) : 'a parser -> ('a -> 'b) -> 'b parser
+
+val or_ : 'a option -> 'a parser -> 'a option parser
+
 val empty : input -> (unit, error) result
 
 val return : 'a parser

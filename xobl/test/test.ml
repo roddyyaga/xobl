@@ -30,6 +30,11 @@ let test_parse _ =
     <item name="IsXPointer"> <value>0</value></item>
     <item name="IsXKeyboard"><value>1</value></item>
   </enum>
+	<union name="Behavior">
+		<field name="common" type="CommonBehavior" />
+		<field name="match" type="CARD8" altenum="SymInterpretMatch" />
+		<pad bytes="21" />
+  </union>
 </xcb>
   |xml} in
   match Parser.x i with
@@ -47,6 +52,11 @@ let test_parse _ =
       ; `Errorcopy ("Window", 3, "Value")
       ; `Eventstruct ("EventForSend", ["Input", false, (0, 16)])
       ; `Enum ("DeviceUse", [("IsXPointer", 0L); ("IsXKeyboard", 1L)])
+      ; `Union ("Behavior", [
+          `Field ("common", "CommonBehavior", None);
+          `Field ("match", "CARD8", Some "SymInterpretMatch");
+          `Pad (false, `Bytes 21)
+        ])
       ])) res
   | Error err ->
     assert_failure err

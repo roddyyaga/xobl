@@ -27,6 +27,21 @@ let mk_popcount e = `Popcount e
 
 let mk_expression e = `Expression e
 
+type pad = [ `Bytes of int | `Align of int ]
+
+let pad_bytes v = `Bytes v
+let pad_align v = `Align v
+
+type field =
+  [ `Fd of string
+  | `Pad of bool * pad
+  | `Field of string * string * string option
+  ]
+
+let mk_fd name = `Fd name
+let mk_pad (serialize, b_a) = `Pad (serialize, b_a)
+let mk_field (name, typ, allowed) = `Field (name, typ, allowed)
+
 type toplevel =
   [ `Import of string
   | `Xidtype of string
@@ -36,6 +51,7 @@ type toplevel =
   | `Eventcopy of string * int * string
   | `Errorcopy of string * int * string
   | `Eventstruct of string * (string * bool * (int * int)) list
+  | `Union of string * field list
   ]
 
 let mk_import i = `Import i
@@ -49,6 +65,7 @@ let mk_errorcopy (new_name, number, old_name) =
 let mk_allowed_eventstruct ext xge min max = ext, xge, (min, max)
 let mk_eventstruct (name, allowed) = `Eventstruct (name, allowed)
 let mk_enum (name, items) = `Enum (name, items)
+let mk_union (name, fields) = `Union (name, fields)
 
 type extension_info =
   { name : string
@@ -161,6 +178,30 @@ let expression = fix @@ fun expression ->
     ; bit
     ]
 
+let field =
+  let pad_attrs =
+    let open Attr in
+    let pad = (int "bytes" => pad_bytes) <|> (int "align" => pad_align) in
+    tuple2 (bool_f "serialize") pad
+  in
+  let field_attrs =
+    let open Attr in
+    let allowed =
+      str "enum" <|> str "mask" <|> str "altenum" <|> str "altmask"
+      |> or_ None
+    in
+    tuple3 (str "name") (str "type") allowed
+  in
+  choice
+    [ el_empty "fd" Attr.(return (str "name")) => mk_fd
+    ; el_empty "pad" pad_attrs => mk_pad
+    ; el_empty "field" field_attrs => mk_field
+    ]
+
+let union =
+  el_attr "union" Attr.(return (str "name")) (many field)
+  => mk_union
+
 let declaration =
   choice
     [ import
@@ -171,6 +212,7 @@ let declaration =
     ; eventcopy
     ; errorcopy
     ; eventstruct
+    ; union
     ]
 
 let core =

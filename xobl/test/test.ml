@@ -30,10 +30,13 @@ let test_parse _ =
     <item name="IsXPointer"> <value>0</value></item>
     <item name="IsXKeyboard"><value>1</value></item>
   </enum>
-	<union name="Behavior">
-		<field name="common" type="CommonBehavior" />
-		<field name="match" type="CARD8" altenum="SymInterpretMatch" />
-		<pad bytes="21" />
+  <union name="Behavior">
+    <field name="common" type="CommonBehavior" />
+    <field name="match" type="CARD8" altenum="SymInterpretMatch" />
+    <pad bytes="21" />
+    <list type="VISUALTYPE" name="visuals">
+      <fieldref>visuals_len</fieldref>
+    </list>
   </union>
 </xcb>
   |xml} in
@@ -54,8 +57,9 @@ let test_parse _ =
       ; `Enum ("DeviceUse", [("IsXPointer", 0L); ("IsXKeyboard", 1L)])
       ; `Union ("Behavior", [
           `Field ("common", "CommonBehavior", None);
-          `Field ("match", "CARD8", Some "SymInterpretMatch");
-          `Pad (false, `Bytes 21)
+          `Field ("match", "CARD8", Some (`Altenum "SymInterpretMatch"));
+          `Pad (false, `Bytes 21);
+          `List ("visuals", "VISUALTYPE", None, `Fieldref "visuals_len");
         ])
       ])) res
   | Error err ->

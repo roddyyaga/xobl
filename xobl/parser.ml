@@ -32,15 +32,29 @@ type pad = [ `Bytes of int | `Align of int ]
 let pad_bytes v = `Bytes v
 let pad_align v = `Align v
 
+type allowed =
+  [ `Enum of string
+  | `Mask of string
+  | `Altenum of string
+  | `Altmask of string ]
+
+let mk_allowed_enum e = `Enum e
+let mk_allowed_mask m = `Mask m
+let mk_allowed_altenum e = `Altenum e
+let mk_allowed_altmask m = `Altmask m
+
 type field =
   [ `Fd of string
   | `Pad of bool * pad
-  | `Field of string * string * string option
+  | `Field of string * string * allowed option
+  | `List of string * string * allowed option * expression
   ]
 
 let mk_fd name = `Fd name
 let mk_pad (serialize, b_a) = `Pad (serialize, b_a)
 let mk_field (name, typ, allowed) = `Field (name, typ, allowed)
+let mk_list ((name, typ, allowed), expression) =
+  `List (name, typ, allowed, expression)
 
 type toplevel =
   [ `Import of string
@@ -153,7 +167,7 @@ let expression = fix @@ fun expression ->
     el "popcount" expression => mk_popcount
   in
   let sumof =
-    el_attr "sumof" Attr.(return (str "ref")) (opt data)
+    el_attr "sumof" Attr.(return (str "ref")) (opt expression)
     => mk_sumof
   in
   let listelement_ref =
@@ -184,18 +198,20 @@ let field =
     let pad = (int "bytes" => pad_bytes) <|> (int "align" => pad_align) in
     tuple2 (bool_f "serialize") pad
   in
-  let field_attrs =
+  let allowed =
     let open Attr in
-    let allowed =
-      str "enum" <|> str "mask" <|> str "altenum" <|> str "altmask"
-      |> or_ None
-    in
-    tuple3 (str "name") (str "type") allowed
+    (str "enum" => mk_allowed_enum) <|>
+    (str "mask" => mk_allowed_mask) <|>
+    (str "altenum" => mk_allowed_altenum) <|>
+    (str "altmask" => mk_allowed_altmask)
+    |> or_ None
   in
+  let field_attrs = Attr.(tuple3 (str "name") (str "type") allowed) in
   choice
     [ el_empty "fd" Attr.(return (str "name")) => mk_fd
     ; el_empty "pad" pad_attrs => mk_pad
     ; el_empty "field" field_attrs => mk_field
+    ; el_attr "list" field_attrs expression => mk_list
     ]
 
 let union =

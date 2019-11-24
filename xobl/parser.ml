@@ -2,9 +2,28 @@ open Patche
 open Patche.Xml
 open Patche.Infix
 
+type binop =
+  [ `Add | `Sub | `Mul | `Div
+  | `Bit_and | `Bit_left_shift ]
+
+let binop : string -> (binop, string) result = function
+  | "+" -> Ok `Add
+  | "-" -> Ok `Sub
+  | "*" -> Ok `Mul
+  | "/" -> Ok `Div
+  | "&" -> Ok `Bit_and
+  | "<<" -> Ok `Bit_left_shift
+  | o -> Error (Printf.sprintf "invalid binary operation: %S" o)
+
+type unop = [ `Bit_not ]
+
+let unop : string -> (unop, string) result = function
+  | "~" -> Ok `Bit_not
+  | o -> Error (Printf.sprintf "invalid unary operation: %S" o)
+
 type expression =
-  [ `Binop of string * expression * expression
-  | `Unop of string * expression
+  [ `Binop of binop * expression * expression
+  | `Unop of unop * expression
   | `Fieldref of string
   | `Paramref of string * string
   | `Enumref of string * string
@@ -145,16 +164,18 @@ let eventstruct =
 
 let expression = fix @@ fun expression ->
   let binop =
-    el_attr "op" Attr.(return (str "op")) (expression &>>& expression)
+    el_attr "op"
+      Attr.(return (str "op" |> pipe_result binop))
+      (expression &>>& expression)
     => mk_binop
   in
   let unop =
-    el_attr "unop" Attr.(return (str "op")) expression
+    el_attr "unop"
+      Attr.(return (str "op" |> pipe_result unop))
+      expression
     => mk_unop
   in
-  let fieldref =
-    el "fieldref" data => mk_fieldref
-  in
+  let fieldref = el "fieldref" data => mk_fieldref in
   let paramref =
     el_attr "paramref" Attr.(return (str "type")) data
     => mk_paramref
@@ -163,9 +184,7 @@ let expression = fix @@ fun expression ->
     el_attr "enumref" Attr.(return (str "ref")) data
     => mk_enumref
   in
-  let popcount =
-    el "popcount" expression => mk_popcount
-  in
+  let popcount = el "popcount" expression => mk_popcount in
   let sumof =
     el_attr "sumof" Attr.(return (str "ref")) (opt expression)
     => mk_sumof
@@ -173,12 +192,8 @@ let expression = fix @@ fun expression ->
   let listelement_ref =
     el_unit "listelement-ref"|> discard_with `Listelement_ref
   in
-  let value =
-    el "value" data |> pipe_result try_parse_int => mk_value
-  in
-  let bit =
-    el "bit" data |> pipe_result try_parse_int => mk_value
-  in
+  let value = el "value" data |> pipe_result try_parse_int => mk_value in
+  let bit = el "bit" data |> pipe_result try_parse_int => mk_value in
   choice
     [ binop
     ; unop

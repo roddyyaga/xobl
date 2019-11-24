@@ -28,6 +28,8 @@ val ( => ) : 'a parser -> ('a -> 'b) -> 'b parser
 
 val or_ : 'a option -> 'a parser -> 'a option parser
 
+val pipe_result : ('a -> ('b, error) result) -> 'a parser -> 'b parser
+
 val empty : input -> (unit, error) result
 
 val return : 'a parser

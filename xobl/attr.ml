@@ -120,6 +120,12 @@ let or_ o p inp =
   | Ok (result, rest) -> Ok (Some result, rest)
   | Error _ -> Ok (o, inp)
 
+let pipe_result f p inp =
+  match p inp with
+  | Ok (v, rest) ->
+    f v |> Result.map (fun v -> (v, rest))
+  | Error _ as err -> err
+
 
 let eoi = function
   | [] -> Ok ()

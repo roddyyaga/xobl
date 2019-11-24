@@ -41,11 +41,12 @@ let test_parse _ =
 </xcb>
   |xml} in
   match Parser.x i with
+  | Error err ->
+    assert_failure err
   | Ok (res, _) ->
-    assert_equal (Parser.Extension (
+    res |> assert_equal (Parser.Extension (
       { name = "xkb"; file_name = "xkb"; query_name = "XKEYBOARD"
-      ; multiword = false; version = (1, 0)
-      },
+      ; multiword = false; version = (1, 0) },
       [ `Import "ayy"
       ; `Import "tfw"
       ; `Xidtype "xid"
@@ -61,9 +62,7 @@ let test_parse _ =
           `Pad (false, `Bytes 21);
           `List ("visuals", "VISUALTYPE", None, `Fieldref "visuals_len");
         ])
-      ])) res
-  | Error err ->
-    assert_failure err
+      ]))
 
 
 let test_attr _ =

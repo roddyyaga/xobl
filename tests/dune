@@ -1,4 +1,0 @@
-(test
- (name serialize_tests)
- (modules serialize_tests)
- (libraries qcheck xobl_bindings))

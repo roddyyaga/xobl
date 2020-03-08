@@ -1,5 +1,0 @@
-(library
- (name xobl_ocaml_backend)
- (libraries containers xobl_elaborate)
- (inline_tests)
- (preprocess (pps ppx_inline_test)))

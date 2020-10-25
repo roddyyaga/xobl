@@ -1,0 +1,4 @@
+(executables
+ (names create_window)
+ (libraries xobl_bindings)
+ (preprocess (pps lwt_ppx)))

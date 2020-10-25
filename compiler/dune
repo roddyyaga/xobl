@@ -1,0 +1,3 @@
+(library
+ (name xobl_compiler)
+ (libraries xmlm))

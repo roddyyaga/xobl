@@ -1,4 +1,1 @@
-let () =
-  Lwt_main.run begin
-    Lwt.return ()
-  end
+let () = Lwt_main.run (Lwt.return ())

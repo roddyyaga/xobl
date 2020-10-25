@@ -11,7 +11,7 @@ let open_display name =
         let auth =
           Option.bind (Xauth.get_path ()) (fun path ->
               Xauth.entries_from_file path
-              |> Xauth.get_best_auth ~family:Family_local ~address:localhost
+              |> Xauth.get_best ~family:Xauth.Family.Local ~address:localhost
                    ~display)
           |> Option.value ~default:("", "")
         in

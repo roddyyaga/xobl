@@ -49,7 +49,8 @@ let try_get_name = function
   | None ->
       Sys.getenv_opt "DISPLAY" |> Option.value ~default:":0"
 
-let open_ { hostname; display; screen } =
+(* TODO: connect to a remote domain *)
+let open_ { hostname; display; screen = _ } =
   let%lwt localhost = Lwt_unix.gethostname () in
   let domain, address, (xauth_name, xauth_data) =
     match hostname with
@@ -59,18 +60,17 @@ let open_ { hostname; display; screen } =
         let addr = "/tmp/.X11-unix/X" ^ string_of_int display in
         let auth =
           Option.bind (Xauth.get_path ()) (fun path ->
-            Xauth.entries_from_file path
-            |> Xauth.get_best_auth ~family:Family_local ~address:localhost
-              ~display
-          )
-    |> Option.value ~default:("", "")
+              Xauth.entries_from_file path
+              |> Xauth.get_best ~family:Xauth.Family.Local ~address:localhost
+                   ~display)
+          |> Option.value ~default:("", "")
         in
-        (Unix.PF_UNIX, Unix.PF_ADDR_UNIX addr, auth)
+        (Unix.PF_UNIX, Unix.ADDR_UNIX addr, auth)
   in
-  let%lwt socket = Lwt_unix.socket domain Unix.SOCK_STREAM 0 in
+  let socket = Lwt_unix.socket domain Unix.SOCK_STREAM 0 in
   Lwt_unix.connect socket address;%lwt
   let handshake, len = Protocol.make_handshake xauth_name xauth_data in
   let _ = Lwt_unix.write socket handshake 0 len in
   let%lwt in_buf = Protocol.read_handshake_response socket in
-  let conn_info, _ = Protocol.read_handshake in_buf
+  let _conn_info, _ = Protocol.read_handshake in_buf in
   Lwt.return ()

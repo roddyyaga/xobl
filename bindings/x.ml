@@ -1,8 +1,23 @@
+let ( let& ) = Option.bind
+
 let open_display name =
   let name = Display.try_get_name name in
   let Display.{ hostname; display; screen } = Display.parse_name name in
   let localhost = Unix.gethostname () in
   let domain, address, (xauth_name, xauth_data) =
+    match hostname with
+    | Display.Unix_domain_socket path ->
+        let auth =
+          let& xauth_path = Xauth.get_path () in
+          Xauth.entries_from_file xauth_path
+          |> Xauth.get_best ~family:Xauth.Family.Local ~address:localhost
+               ~display
+        in
+        let auth = Option.value ~default:("", "") auth in
+        (Unix.PF_UNIX, Unix.ADDR_UNIX path, auth)
+    | Display.Internet_domain _ ->
+        failwith "not implemented"
+    (*
     match hostname with
     | Some hostname when hostname <> localhost ->
         failwith "remote domain not implemented!"
@@ -16,6 +31,7 @@ let open_display name =
           |> Option.value ~default:("", "")
         in
         (Unix.PF_UNIX, Unix.ADDR_UNIX addr, auth)
+        *)
   in
   let socket = Unix.socket domain Unix.SOCK_STREAM 0 in
   Unix.set_close_on_exec socket;

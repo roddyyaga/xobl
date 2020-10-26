@@ -1,12 +1,25 @@
-type name = { hostname : string option; display : int; screen : int }
+(* Reference implementation: https://gitlab.freedesktop.org/xorg/lib/libxcb *)
+
+(* Xorg listens on port 6000 + n, where n is the display number.
+   https://www.x.org/archive/X11R6.8.0/doc/Xorg.1.html#sect4 *)
+let xorg_tcp_port = 6000
+
+let default = ":0"
+
+type hostname =
+  | Unix_domain_socket of string
+  | Internet_domain of ([`Ipv4 | `Ipv6] * string * int)
+
+type name = { hostname : hostname; display : int; screen : int }
 
 (* The display name has form [hostname]:displaynumber[.screennumber].
    The parts between brackets can be omitted.
+   https://gitlab.freedesktop.org/xorg/lib/libxcb/-/blob/master/src/xcb_util.c
    https://cgit.freedesktop.org/xorg/app/xauth/tree/parsedpy.c
    https://www.x.org/releases/X11R7.7/doc/man/man7/X.7.xhtml#heading5 *)
 let parse_name name =
   let colon = String.rindex name ':' in
-  let hostname = if colon = 0 then None else Some (String.sub name 0 colon) in
+  let hostname = String.sub name 0 colon in
   let last_half =
     String.sub name (colon + 1) (String.length name - colon - 1)
   in
@@ -24,22 +37,36 @@ let parse_name name =
   in
   (hostname, display, screen)
 
-let%test _ = parse_name ":0.1" = (None, "0", Some "1")
+let%test _ = parse_name ":0.1" = ("", "0", Some "1")
 
-let%test _ = parse_name "x.org:0" = (Some "x.org", "0", None)
+let%test _ = parse_name "x.org:0" = ("x.org", "0", None)
 
-let%test _ = parse_name "[::1]:0" = (Some "[::1]", "0", None)
+let%test _ = parse_name "[::1]:0" = ("[::1]", "0", None)
 
-let%test _ =
-  parse_name "198.112.45.11:0.1" = (Some "198.112.45.11", "0", Some "1")
+let%test _ = parse_name "198.112.45.11:0.1" = ("198.112.45.11", "0", Some "1")
 
-let%test "DECnet addresses terminate in :: but we don't support DECnet" =
-  parse_name "hydra::0.1" = (Some "hydra:", "0", Some "1")
+let%test "DECnet addresses terminate in :: but we don't do DECnet" =
+  parse_name "hydra::0.1" = ("hydra:", "0", Some "1")
+
+let parse_hostname ~display = function
+  | "" | "unix" ->
+      Unix_domain_socket ("/tmp/.X11-unix/X" ^ string_of_int display)
+  | hostname ->
+      let port = xorg_tcp_port + display in
+      let len = String.length hostname in
+      if len >= 2 && hostname.[0] = '[' && hostname.[len - 1] = ']' then
+        let hostname = String.sub hostname 1 (len - 2) in
+        Internet_domain (`Ipv6, hostname, port)
+      else Internet_domain (`Ipv4, hostname, port)
+
+let%test "ipv6 address" =
+  parse_hostname "[::1]" ~display:3 = Internet_domain (`Ipv6, "::1", 6003)
 
 let parse_name name =
   let hostname, display, screen = parse_name name in
-  { hostname
-  ; display = int_of_string display
+  let display = int_of_string display in
+  { hostname = parse_hostname ~display hostname
+  ; display
   ; screen = Option.fold screen ~some:int_of_string ~none:0
   }
 
@@ -47,30 +74,4 @@ let try_get_name = function
   | Some name ->
       name
   | None ->
-      Sys.getenv_opt "DISPLAY" |> Option.value ~default:":0"
-
-(* TODO: connect to a remote domain *)
-let open_ { hostname; display; screen = _ } =
-  let%lwt localhost = Lwt_unix.gethostname () in
-  let domain, address, (xauth_name, xauth_data) =
-    match hostname with
-    | Some hostname when hostname <> localhost ->
-        failwith "remote domain not implemented"
-    | Some _ | None ->
-        let addr = "/tmp/.X11-unix/X" ^ string_of_int display in
-        let auth =
-          Option.bind (Xauth.get_path ()) (fun path ->
-              Xauth.entries_from_file path
-              |> Xauth.get_best ~family:Xauth.Family.Local ~address:localhost
-                   ~display)
-          |> Option.value ~default:("", "")
-        in
-        (Unix.PF_UNIX, Unix.ADDR_UNIX addr, auth)
-  in
-  let socket = Lwt_unix.socket domain Unix.SOCK_STREAM 0 in
-  Lwt_unix.connect socket address;%lwt
-  let handshake, len = Protocol.make_handshake xauth_name xauth_data in
-  let _ = Lwt_unix.write socket handshake 0 len in
-  let%lwt in_buf = Protocol.read_handshake_response socket in
-  let _conn_info, _ = Protocol.read_handshake in_buf in
-  Lwt.return ()
+      Sys.getenv_opt "DISPLAY" |> Option.value ~default

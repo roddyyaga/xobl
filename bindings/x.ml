@@ -2,7 +2,7 @@ let ( let& ) = Option.bind
 
 let open_display name =
   let name = Display.try_get_name name in
-  let { hostname; display; screen } = Display.parse_name name in
+  let Display.{ hostname; display; screen } = Display.parse_name name in
   let%lwt socket, conn_info = Connection.open_display ~hostname ~display in
   let new_xid =
     let inc =

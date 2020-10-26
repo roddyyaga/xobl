@@ -4,13 +4,14 @@
    https://www.x.org/archive/X11R6.8.0/doc/Xorg.1.html#sect4 *)
 let xorg_tcp_port = 6000
 
-let default = ":0"
-
 type hostname =
   | Unix_domain_socket of string
   | Internet_domain of ([`Ipv4 | `Ipv6] * string * int)
 
 type name = { hostname : hostname; display : int; screen : int }
+
+let default =
+  { hostname = Unix_domain_socket "/tmp/.X11-unix/X0"; display = 0; screen = 0 }
 
 (* The display name has form [hostname]:displaynumber[.screennumber].
    The parts between brackets can be omitted.
@@ -113,4 +114,4 @@ let try_get_name = function
   | Some name ->
       name
   | None ->
-      Sys.getenv_opt "DISPLAY" |> Option.value ~default
+      Sys.getenv_opt "DISPLAY" |> Option.value ~default:":0"

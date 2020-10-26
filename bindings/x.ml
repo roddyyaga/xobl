@@ -2,8 +2,8 @@ let ( let& ) = Option.bind
 
 let open_display name =
   let name = Display.try_get_name name in
-  let display = Display.parse_name name in
-  let%lwt socket, conn_info = Connection.open_display display in
+  let { hostname; display; screen } = Display.parse_name name in
+  let%lwt socket, conn_info = Connection.open_display ~hostname ~display in
   let new_xid =
     let inc =
       let open Int32 in
@@ -15,8 +15,9 @@ let open_display name =
     fun () ->
       if !last > 0l && !last >= Int32.(add (sub max inc) 1l) then
         failwith "No more available resource identifiers"
-      else last := Int32.add !last inc;
-      Int32.logor !last conn_info.Protocol.resource_id_base
+      else (
+        last := Int32.add !last inc;
+        Int32.logor !last conn_info.Protocol.resource_id_base )
   in
   let len = 36 in
   let xid = new_xid () in
@@ -42,4 +43,4 @@ let open_display name =
   Bytes.set_int32_le buf 4 xid;
   let%lwt _ = Lwt_unix.write socket buf 0 len in
   Lwt_unix.sleep 5.;%lwt
-  Lwt.return (conn_info, display.screen)
+  Lwt.return (conn_info, screen)

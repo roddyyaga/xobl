@@ -2,7 +2,7 @@ let ( let& ) = Option.bind
 
 let ( let* ) = Lwt.bind
 
-let open_display Display.{ hostname; display; _ } =
+let open_display ~hostname ~display =
   let* domain, address, (xauth_name, xauth_data) =
     match hostname with
     | Display.Unix_domain_socket path ->
@@ -36,17 +36,21 @@ let open_display Display.{ hostname; display; _ } =
   let conn_info, _ = Protocol.read_handshake in_buf in
   Lwt.return (socket, conn_info)
 
-type xid_seed = { last : int32; inc : int32; base : int32; max : int32 }
+module Xid_seed = struct
+  type seed = { last : int32; inc : int32; base : int32; max : int32 }
 
-let make_xid_seed ~base ~mask =
-  let inc = Int32.(logand mask (neg mask)) in
-  let max = Int32.(add (sub mask inc) 1l) in
-  { last = 0l; inc; base; max }
+  let make ~base ~mask =
+    let inc = Int32.(logand mask (neg mask)) in
+    let max = Int32.(add (sub mask inc) 1l) in
+    { last = 0l; inc; base; max }
 
-let new_xid { last; inc; base; max } =
-  if last > 0l && last >= max then
-    failwith "No more available resource identifiers"
-  else
-    let last = Int32.add last inc in
-    let xid = Int32.logor last base in
-    (xid, { last; inc; base; max })
+  (* TODO: use xmisc extension to look for unused xids when they run out
+     https://gitlab.freedesktop.org/xorg/lib/libxcb/-/blob/master/src/xcb_xid.c *)
+  let generate { last; inc; base; max } =
+    if last > 0l && last >= max then
+      failwith "No more available resource identifiers"
+    else
+      let last = Int32.add last inc in
+      let xid = Int32.logor last base in
+      Lwt.return (xid, { last; inc; base; max })
+end

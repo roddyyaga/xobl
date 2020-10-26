@@ -2,46 +2,8 @@ let ( let& ) = Option.bind
 
 let open_display name =
   let name = Display.try_get_name name in
-  let Display.{ hostname; display; screen } = Display.parse_name name in
-  let localhost = Unix.gethostname () in
-  let domain, address, (xauth_name, xauth_data) =
-    match hostname with
-    | Display.Unix_domain_socket path ->
-        let auth =
-          let& xauth_path = Xauth.get_path () in
-          Xauth.entries_from_file xauth_path
-          |> Xauth.get_best ~family:Xauth.Family.Local ~address:localhost
-               ~display
-        in
-        let auth = Option.value ~default:("", "") auth in
-        (Unix.PF_UNIX, Unix.ADDR_UNIX path, auth)
-    | Display.Internet_domain _ ->
-        failwith "not implemented"
-    (*
-    match hostname with
-    | Some hostname when hostname <> localhost ->
-        failwith "remote domain not implemented!"
-    | Some _ | None ->
-        let addr = "/tmp/.X11-unix/X" ^ string_of_int display in
-        let auth =
-          Option.bind (Xauth.get_path ()) (fun path ->
-              Xauth.entries_from_file path
-              |> Xauth.get_best ~family:Xauth.Family.Local ~address:localhost
-                   ~display)
-          |> Option.value ~default:("", "")
-        in
-        (Unix.PF_UNIX, Unix.ADDR_UNIX addr, auth)
-        *)
-  in
-  let socket = Unix.socket domain Unix.SOCK_STREAM 0 in
-  Unix.set_close_on_exec socket;
-  Unix.connect socket address;
-  let handshake, len = Protocol.make_handshake xauth_name xauth_data in
-  let _ = Unix.write socket handshake 0 len in
-  let%lwt in_buf =
-    Protocol.read_handshake_response (Lwt_unix.of_unix_file_descr socket)
-  in
-  let conn_info, _ = Protocol.read_handshake in_buf in
+  let display = Display.parse_name name in
+  let%lwt socket, conn_info = Connection.open_display display in
   let new_xid =
     let inc =
       let open Int32 in
@@ -72,12 +34,12 @@ let open_display name =
   Bytes.set_int32_le buf 24 (List.hd conn_info.Protocol.screens).root_visual;
   Bytes.set_int32_le buf 28 0x2l;
   Bytes.set_int32_le buf 32 (List.hd conn_info.Protocol.screens).white_pixel;
-  let _ = Unix.write socket buf 0 len in
+  let%lwt _ = Lwt_unix.write socket buf 0 len in
   let len = 8 in
   let buf = Bytes.create len in
   Bytes.set_int8 buf 0 8;
   Bytes.set_uint16_le buf 2 (len / 4);
   Bytes.set_int32_le buf 4 xid;
-  let _ = Unix.write socket buf 0 len in
-  ignore (read_line ());
-  Lwt.return (conn_info, screen)
+  let%lwt _ = Lwt_unix.write socket buf 0 len in
+  Lwt_unix.sleep 5.;%lwt
+  Lwt.return (conn_info, display.screen)

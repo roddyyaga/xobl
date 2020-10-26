@@ -2,7 +2,7 @@ let ( let& ) = Option.bind
 
 let ( let* ) = Lwt.bind
 
-let open_display Display.{ hostname; display; screen = _ } =
+let open_display Display.{ hostname; display; _ } =
   let* domain, address, (xauth_name, xauth_data) =
     match hostname with
     | Display.Unix_domain_socket path ->
@@ -23,6 +23,8 @@ let open_display Display.{ hostname; display; screen = _ } =
           Lwt_unix.getaddrinfo hostname (string_of_int port)
             [Unix.AI_SOCKTYPE Unix.SOCK_STREAM; Unix.AI_FAMILY family]
         in
+        (* TODO: we should try to connect to all the results in order
+           instead of just picking the first. *)
         let Unix.{ ai_family; ai_addr; _ } = List.hd addresses in
         Lwt.return (ai_family, ai_addr, ("", ""))
   in
@@ -31,5 +33,20 @@ let open_display Display.{ hostname; display; screen = _ } =
   let handshake, len = Protocol.make_handshake xauth_name xauth_data in
   let* _ = Lwt_unix.write socket handshake 0 len in
   let* in_buf = Protocol.read_handshake_response socket in
-  let _conn_info, _ = Protocol.read_handshake in_buf in
-  Lwt.return ()
+  let conn_info, _ = Protocol.read_handshake in_buf in
+  Lwt.return (socket, conn_info)
+
+type xid_seed = { last : int32; inc : int32; base : int32; max : int32 }
+
+let make_xid_seed ~base ~mask =
+  let inc = Int32.(logand mask (neg mask)) in
+  let max = Int32.(add (sub mask inc) 1l) in
+  { last = 0l; inc; base; max }
+
+let new_xid { last; inc; base; max } =
+  if last > 0l && last >= max then
+    failwith "No more available resource identifiers"
+  else
+    let last = Int32.add last inc in
+    let xid = Int32.logor last base in
+    (xid, { last; inc; base; max })

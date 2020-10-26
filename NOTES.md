@@ -9,4 +9,8 @@ Reference: https://gitlab.freedesktop.org/xorg/lib/libxau
 - [ ] handle auth schemes other than MIT-MAGIC-COOKIE-1
   (should we even? xgb doesn't)
 
-### Display
+### Connection
+
+- [ ] use xmisc extension to look for unused xids
+
+- [ ] try to connect to all connections returned by getaddrinfo

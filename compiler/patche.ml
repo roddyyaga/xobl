@@ -3,15 +3,11 @@ module type I = sig
 end
 
 module type O = sig
-  type 't input
-
-  type error = string
-
-  type ('t, 'inp) parser = 'inp input -> ('t * 'inp input, error) Result.t
+  type ('t, 'inp) parser = 'inp -> ('t * 'inp, string) Result.t
 
   val return : 't -> ('t, 'inp) parser
 
-  val error : error -> ('t, 'inp) parser
+  val error : string -> ('t, 'inp) parser
 
   val bind : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
 
@@ -95,7 +91,7 @@ module type O = sig
     -> ('c, 'inp) parser
 
   val pipe_result :
-    ('a -> ('b, error) result) -> ('a, 'inp) parser -> ('b, 'inp) parser
+    ('a -> ('b, string) result) -> ('a, 'inp) parser -> ('b, 'inp) parser
 
   val discard_with : 'a -> (_, 'inp) parser -> ('a, 'inp) parser
 
@@ -103,7 +99,7 @@ module type O = sig
 
   val discard_left : (_, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
-  val lift : ('a, error) Result.t -> ('a, error) parser
+  val lift : ('a, string) Result.t -> ('a, 'inp) parser
 
   module Infix : sig
     val ( let& ) :
@@ -122,12 +118,12 @@ module type O = sig
   end
 end
 
-module Make (P : I) : O with type 't input = 't P.input = struct
+module Make (P : I) : O = struct
+  (*
   type 't input = 't P.input
+  *)
 
-  type error = string
-
-  type ('t, 'inp) parser = 'inp input -> ('t * 'inp input, error) Result.t
+  type ('t, 'inp) parser = 'inp -> ('t * 'inp, string) Result.t
 
   let return v inp = Ok (v, inp)
 
@@ -362,7 +358,12 @@ module Attr = struct
     opt_conv v int_of_string_opt
       (Printf.sprintf "failed to convert attribute '%s' to int: %S" name)
 
+     (*
   let int name =
+    *)
+  let int : string -> (int, Xmlm.attribute list) parser =
+    fun name ->
+
     let& v = required name in
     int_of_string_opt v
     |> Option.to_result
@@ -405,27 +406,31 @@ module Attr = struct
 end
 
 module Xml : sig
-  val data : (string, Xmlm.signal) Lazy_list_patche.parser
+  type input = Xmlm.signal Lazy_list.t Lazy.t
 
-  val dtd : (Xmlm.dtd, Xmlm.signal) Lazy_list_patche.parser
+  val data : (string, input) Lazy_list_patche.parser
 
-  val el : string -> (unit, Xmlm.signal) Lazy_list_patche.parser
+  val dtd : (Xmlm.dtd, input) Lazy_list_patche.parser
 
-  val el_a : string -> 'a Attr.t -> ('a, Xmlm.signal) Lazy_list_patche.parser
+  val el : string -> (unit, input) Lazy_list_patche.parser
+
+  val el_a : string -> 'a Attr.t -> ('a, input) Lazy_list_patche.parser
 
   val el_b :
        string
-    -> ('a, Xmlm.signal) Lazy_list_patche.parser
-    -> ('a, Xmlm.signal) Lazy_list_patche.parser
+    -> ('a, input) Lazy_list_patche.parser
+    -> ('a, input) Lazy_list_patche.parser
 
   val el_ab :
        string
     -> 'a Attr.t
-    -> ('b, Xmlm.signal) Lazy_list_patche.parser
-    -> ('a * 'b, Xmlm.signal) Lazy_list_patche.parser
+    -> ('b, input) Lazy_list_patche.parser
+    -> ('a * 'b, input) Lazy_list_patche.parser
 end = struct
   open Lazy_list_patche
   open Lazy_list_patche.Infix
+
+  type input = Xmlm.signal Lazy_list.t Lazy.t
 
   let data =
     apply @@ function `Data data -> Ok data | _ -> Error "expected `Data"

@@ -139,21 +139,23 @@ let lift = function Ok v -> return v | Error msg -> error msg
 module Infix = struct
   let ( let& ) = bind
 
+  (* In ascending order of precedence *)
+
   let ( <|> ) = or_
 
-  let ( >>& ) = discard_left
+  let ( ->> ) p f = pipe f p
 
-  let ( &>> ) = discard_right
+  let ( *> ) = discard_left
 
-  let ( &>>& ) = tuple2
+  let ( *< ) = discard_right
 
-  let ( => ) p f = pipe f p
+  let ( *<> ) = tuple2
 end
 
 module Attr = struct
   type input = Xmlm.attribute list
 
-  type 'a t = input -> ('a, string) result
+  type 'a t = ('a, input) parser
 
   let list_remove_opt f =
     let rec loop prev = function
@@ -266,11 +268,14 @@ module Xml = struct
 
   let dtd = apply @@ function `Dtd dtd -> Ok dtd | _ -> Error "expected `Dtd"
 
+  let el_start_any =
+    apply @@ function `El_start _ -> Ok () | _ -> Error "expected `El_start"
+
   let el_start_a name attr =
     apply
     @@ function
     | `El_start ((_, n), attrs) when n = name ->
-        attr attrs
+        (Attr.run attr) attrs
     | _ ->
         Error ("expected `El_start: " ^ name)
 
@@ -296,11 +301,19 @@ module Xml = struct
     | `Dtd _ ->
         Error "expect `El_end, received `Dtd"
 
-  let el_ab name attr body = el_start_a name attr &>>& body &>> el_end
+  let el_ab name attr body = el_start_a name attr *<> body *< el_end
 
-  let el_a name attr = el_start_a name attr &>> el_end
+  let el_a name attr = el_start_a name attr *< el_end
 
-  let el_b name body = el_start name >>& body &>> el_end
+  let el_b name body = el_start name *> body *< el_end
 
-  let el name = el_start name >>& el_end
+  let el name = el_start name *< el_end
+
+  let el_discard name =
+    let inner =
+      fix
+      @@ fun el_discard ->
+      discard_with () data <|> el_start_any *> el_discard *> el_end
+    in
+    el_start name *> inner *> el_end
 end

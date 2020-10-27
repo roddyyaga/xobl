@@ -102,24 +102,19 @@ module Infix : sig
 
   val ( <|> ) : ('a, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
-  val ( &>> ) : ('a, 'inp) parser -> (_, 'inp) parser -> ('a, 'inp) parser
+  val ( ->> ) : ('a, 'inp) parser -> ('a -> 'b) -> ('b, 'inp) parser
 
-  val ( >>& ) : (_, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
+  val ( *> ) : (_, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
-  val ( &>>& ) :
-    ('a, 'inp) parser -> ('b, 'inp) parser -> ('a * 'b, 'inp) parser
+  val ( *< ) : ('a, 'inp) parser -> (_, 'inp) parser -> ('a, 'inp) parser
 
-  val ( => ) : ('a, 'inp) parser -> ('a -> 'b) -> ('b, 'inp) parser
+  val ( *<> ) : ('a, 'inp) parser -> ('b, 'inp) parser -> ('a * 'b, 'inp) parser
 end
 
 module Attr : sig
   type input = Xmlm.attribute list
 
-  (*
   type 'a t = ('a, input) parser
-    *)
-
-  type 'a t = input -> ('a, string) result
 
   val eoi : (unit, input) parser
 
@@ -145,9 +140,15 @@ module Xml : sig
 
   val eoi : (unit, input) parser
 
+  val dtd : (Xmlm.dtd, input) parser
+
   val data : (string, input) parser
 
-  val dtd : (Xmlm.dtd, input) parser
+  val el_start_a : string -> 'a Attr.t -> ('a, input) parser
+
+  val el_start : string -> (unit, input) parser
+
+  val el_end : (unit, input) parser
 
   val el : string -> (unit, input) parser
 
@@ -157,4 +158,6 @@ module Xml : sig
 
   val el_ab :
     string -> 'a Attr.t -> ('b, input) parser -> ('a * 'b, input) parser
+
+  val el_discard : string -> (unit, input) parser
 end

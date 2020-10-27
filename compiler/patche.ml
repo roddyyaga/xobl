@@ -5,11 +5,7 @@ let return v inp = Ok (v, inp)
 let error msg _ = Error msg
 
 let bind parser f inp =
-  match parser inp with
-  | Ok (result, rest) ->
-      f result rest
-  | Error _ as e ->
-      e
+  match parser inp with Ok (result, rest) -> f result rest | Error _ as e -> e
 
 let ( let& ) = bind
 
@@ -183,7 +179,11 @@ module Attr = struct
     | None, _ ->
         Error (Printf.sprintf "couldn't find attribute '%s'" name)
 
-  let eoi = function [] -> Ok ((), []) | _ -> Error "trailing elements detected"
+  let eoi = function
+    | [] ->
+        Ok ((), [])
+    | _ ->
+        Error "trailing elements detected"
 
   let str = required
 
@@ -204,10 +204,6 @@ module Attr = struct
       (Printf.sprintf "failed to convert attribute '%s' to int: %S" name)
 
   let int name =
-     (*
-  let int : string -> (int, Xmlm.attribute list) parser =
-    fun name ->
-    *)
     let& v = required name in
     int_of_string_opt v
     |> Option.to_result
@@ -219,17 +215,6 @@ module Attr = struct
     let& v = optional name in
     opt_conv v bool_of_string_opt
       (Printf.sprintf "failed to convert attribute '%s' to bool: %S" name)
-
-  (*
-  let bool_f name attrs =
-      bool_o name attrs
-        |> Result.map (fun (v, rest) -> Option.value ~default:false v, rest)
-
-
-  let bool_t name attrs =
-      bool_o name attrs
-        |> Result.map (fun (v, rest) -> Option.value ~default:true v, rest)
-        *)
 
   let bool ?default name attrs =
     match (bool_o name attrs, default) with

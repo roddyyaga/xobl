@@ -153,14 +153,8 @@ module Xml : sig
 
   val el_a : string -> 'a Attr.t -> ('a, input) parser
 
-  val el_b :
-       string
-    -> ('a, input) parser
-    -> ('a, input) parser
+  val el_b : string -> ('a, input) parser -> ('a, input) parser
 
   val el_ab :
-       string
-    -> 'a Attr.t
-    -> ('b, input) parser
-    -> ('a * 'b, input) parser
+    string -> 'a Attr.t -> ('b, input) parser -> ('a * 'b, input) parser
 end

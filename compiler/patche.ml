@@ -393,7 +393,7 @@ module Attr = struct
         Ok (b, rest)
     | Ok (None, _), None ->
         Error (Printf.sprintf "couldn't find attribute '%s'" name)
-    | Error _ as err, _ ->
+    | (Error _ as err), _ ->
         err
 
   let ( let* ) = Result.bind

@@ -21,10 +21,9 @@ type declaration =
   | Struct of string * struct_item list
   | Enum of string * enum_item list
 
-module Attr = Patche.Attr
+open Patche
 open Patche.Xml
-open Patche.Lazy_list_patche
-open Patche.Lazy_list_patche.Infix
+open Patche.Infix
 
 let import = el_b "import" data => fun import -> `Import import
 

@@ -1,313 +1,164 @@
-module type I = sig
-  type 't input
-end
+type ('t, 'inp) parser = 'inp -> ('t * 'inp, string) Result.t
 
-module type O = sig
-  type ('t, 'inp) parser = 'inp -> ('t * 'inp, string) Result.t
+let return v inp = Ok (v, inp)
 
-  val return : 't -> ('t, 'inp) parser
+let error msg _ = Error msg
 
-  val error : string -> ('t, 'inp) parser
+let bind parser f inp =
+  match parser inp with
+  | Ok (result, rest) ->
+      f result rest
+  | Error _ as e ->
+      e
 
-  val bind : ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
+let ( let& ) = bind
 
-  val satisfies : ('a -> bool) -> ('a, 'inp) parser -> ('a, 'inp) parser
+let satisfies test p =
+  let& res = p in
+  if test res then return res else error "test failed"
 
-  val or_ : ('a, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
+let or_ p1 p2 inp = match p1 inp with Ok _ as ok -> ok | Error _ -> p2 inp
 
-  val fix : (('a, 'inp) parser -> ('a, 'inp) parser) -> ('a, 'inp) parser
+let rec fix p inp = p (fix p) inp
 
-  val choice : ('a, 'inp) parser list -> ('a, 'inp) parser
+let choice ps inp =
+  let rec loop = function
+    | [] ->
+        Error "empty"
+    | p :: ps -> (
+      match p inp with Ok _ as ok -> ok | Error _ -> loop ps )
+  in
+  loop ps
 
-  val opt : ('a, 'inp) parser -> ('a option, 'inp) parser
+let tuple2 p1 p2 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  return (res1, res2)
 
-  val many : ('a, 'inp) parser -> ('a list, 'inp) parser
+let tuple3 p1 p2 p3 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  let& res3 = p3 in
+  return (res1, res2, res3)
 
-  val many1 : ('a, 'inp) parser -> ('a list, 'inp) parser
+let tuple4 p1 p2 p3 p4 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  let& res3 = p3 in
+  let& res4 = p4 in
+  return (res1, res2, res3, res4)
 
-  val tuple2 : ('a, 'inp) parser -> ('b, 'inp) parser -> ('a * 'b, 'inp) parser
+let map f p =
+  let& res = p in
+  return (f res)
 
-  val tuple3 :
-       ('a, 'inp) parser
-    -> ('b, 'inp) parser
-    -> ('c, 'inp) parser
-    -> ('a * 'b * 'c, 'inp) parser
+let map2 f p1 p2 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  return (f res1 res2)
 
-  val tuple4 :
-       ('a, 'inp) parser
-    -> ('b, 'inp) parser
-    -> ('c, 'inp) parser
-    -> ('d, 'inp) parser
-    -> ('a * 'b * 'c * 'd, 'inp) parser
+let map3 f p1 p2 p3 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  let& res3 = p3 in
+  return (f res1 res2 res3)
 
-  val map : ('a -> 'b) -> ('a, 'inp) parser -> ('b, 'inp) parser
+let map4 f p1 p2 p3 p4 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  let& res3 = p3 in
+  let& res4 = p4 in
+  return (f res1 res2 res3 res4)
 
-  val map2 :
-       ('a -> 'b -> 'c)
-    -> ('a, 'inp) parser
-    -> ('b, 'inp) parser
-    -> ('c, 'inp) parser
+let map5 f p1 p2 p3 p4 p5 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  let& res3 = p3 in
+  let& res4 = p4 in
+  let& res5 = p5 in
+  return (f res1 res2 res3 res4 res5)
 
-  val map3 :
-       ('a -> 'b -> 'c -> 'd)
-    -> ('a, 'inp) parser
-    -> ('b, 'inp) parser
-    -> ('c, 'inp) parser
-    -> ('d, 'inp) parser
+let map6 f p1 p2 p3 p4 p5 p6 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  let& res3 = p3 in
+  let& res4 = p4 in
+  let& res5 = p5 in
+  let& res6 = p6 in
+  return (f res1 res2 res3 res4 res5 res6)
 
-  val map4 :
-       ('a -> 'b -> 'c -> 'd -> 'e)
-    -> ('a, 'inp) parser
-    -> ('b, 'inp) parser
-    -> ('c, 'inp) parser
-    -> ('d, 'inp) parser
-    -> ('e, 'inp) parser
+let pipe f p =
+  let& res = p in
+  return (f res)
 
-  val map5 :
-       ('a -> 'b -> 'c -> 'd -> 'e -> 'f)
-    -> ('a, 'inp) parser
-    -> ('b, 'inp) parser
-    -> ('c, 'inp) parser
-    -> ('d, 'inp) parser
-    -> ('e, 'inp) parser
-    -> ('f, 'inp) parser
+let pipe2 p1 p2 f =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  return (f res1 res2)
 
-  val map6 :
-       ('a -> 'b -> 'c -> 'd -> 'e -> 'f -> 'g)
-    -> ('a, 'inp) parser
-    -> ('b, 'inp) parser
-    -> ('c, 'inp) parser
-    -> ('d, 'inp) parser
-    -> ('e, 'inp) parser
-    -> ('f, 'inp) parser
-    -> ('g, 'inp) parser
+let pipe_result f p inp =
+  match p inp with
+  | Ok (v, rest) ->
+      f v |> Result.map (fun v -> (v, rest))
+  | Error _ as err ->
+      err
 
-  val pipe : ('a -> 'b) -> ('a, 'inp) parser -> ('b, 'inp) parser
+let opt p inp =
+  match p inp with
+  | Ok (v, rest) ->
+      Ok (Some v, rest)
+  | Error _ ->
+      Ok (None, inp)
 
-  val pipe2 :
-       ('a, 'inp) parser
-    -> ('b, 'inp) parser
-    -> ('a -> 'b -> 'c)
-    -> ('c, 'inp) parser
+let many p inp =
+  let rec loop acc inp =
+    match p inp with
+    | Ok (v, rest) ->
+        if rest == inp then
+          invalid_arg
+            "infinite loop detected in many: parser did not consume anything"
+        else loop (v :: acc) rest
+    | Error _ ->
+        Ok (List.rev acc, inp)
+  in
+  loop [] inp
 
-  val pipe_result :
-    ('a -> ('b, string) result) -> ('a, 'inp) parser -> ('b, 'inp) parser
+let many1 p = pipe2 p (many p) (fun hd tl -> hd :: tl)
 
-  val discard_with : 'a -> (_, 'inp) parser -> ('a, 'inp) parser
+let discard_with v p =
+  let& _ = p in
+  return v
 
-  val discard_right : ('a, 'inp) parser -> (_, 'inp) parser -> ('a, 'inp) parser
+let discard_right p1 p2 =
+  let& res1 = p1 in
+  let& _ = p2 in
+  return res1
 
-  val discard_left : (_, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
+let discard_left p1 p2 =
+  let& _ = p1 in
+  p2
 
-  val lift : ('a, string) Result.t -> ('a, 'inp) parser
+let lift = function Ok v -> return v | Error msg -> error msg
 
-  module Infix : sig
-    val ( let& ) :
-      ('a, 'inp) parser -> ('a -> ('b, 'inp) parser) -> ('b, 'inp) parser
-
-    val ( <|> ) : ('a, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
-
-    val ( &>> ) : ('a, 'inp) parser -> (_, 'inp) parser -> ('a, 'inp) parser
-
-    val ( >>& ) : (_, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
-
-    val ( &>>& ) :
-      ('a, 'inp) parser -> ('b, 'inp) parser -> ('a * 'b, 'inp) parser
-
-    val ( => ) : ('a, 'inp) parser -> ('a -> 'b) -> ('b, 'inp) parser
-  end
-end
-
-module Make (P : I) : O = struct
-  (*
-  type 't input = 't P.input
-  *)
-
-  type ('t, 'inp) parser = 'inp -> ('t * 'inp, string) Result.t
-
-  let return v inp = Ok (v, inp)
-
-  let error msg _ = Error msg
-
-  let bind parser f inp =
-    match parser inp with
-    | Ok (result, rest) ->
-        f result rest
-    | Error _ as e ->
-        e
-
+module Infix = struct
   let ( let& ) = bind
 
-  let satisfies test p =
-    let& res = p in
-    if test res then return res else error "test failed"
+  let ( <|> ) = or_
 
-  let or_ p1 p2 inp = match p1 inp with Ok _ as ok -> ok | Error _ -> p2 inp
+  let ( >>& ) = discard_left
 
-  let rec fix p inp = p (fix p) inp
+  let ( &>> ) = discard_right
 
-  let choice ps inp =
-    let rec loop = function
-      | [] ->
-          Error "empty"
-      | p :: ps -> (
-        match p inp with Ok _ as ok -> ok | Error _ -> loop ps )
-    in
-    loop ps
+  let ( &>>& ) = tuple2
 
-  let tuple2 p1 p2 =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    return (res1, res2)
-
-  let tuple3 p1 p2 p3 =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    let& res3 = p3 in
-    return (res1, res2, res3)
-
-  let tuple4 p1 p2 p3 p4 =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    let& res3 = p3 in
-    let& res4 = p4 in
-    return (res1, res2, res3, res4)
-
-  let map f p =
-    let& res = p in
-    return (f res)
-
-  let map2 f p1 p2 =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    return (f res1 res2)
-
-  let map3 f p1 p2 p3 =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    let& res3 = p3 in
-    return (f res1 res2 res3)
-
-  let map4 f p1 p2 p3 p4 =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    let& res3 = p3 in
-    let& res4 = p4 in
-    return (f res1 res2 res3 res4)
-
-  let map5 f p1 p2 p3 p4 p5 =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    let& res3 = p3 in
-    let& res4 = p4 in
-    let& res5 = p5 in
-    return (f res1 res2 res3 res4 res5)
-
-  let map6 f p1 p2 p3 p4 p5 p6 =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    let& res3 = p3 in
-    let& res4 = p4 in
-    let& res5 = p5 in
-    let& res6 = p6 in
-    return (f res1 res2 res3 res4 res5 res6)
-
-  let pipe f p =
-    let& res = p in
-    return (f res)
-
-  let pipe2 p1 p2 f =
-    let& res1 = p1 in
-    let& res2 = p2 in
-    return (f res1 res2)
-
-  let pipe_result f p inp =
-    match p inp with
-    | Ok (v, rest) ->
-        f v |> Result.map (fun v -> (v, rest))
-    | Error _ as err ->
-        err
-
-  let opt p inp =
-    match p inp with
-    | Ok (v, rest) ->
-        Ok (Some v, rest)
-    | Error _ ->
-        Ok (None, inp)
-
-  let many p inp =
-    let rec loop acc inp =
-      match p inp with
-      | Ok (v, rest) ->
-          if rest == inp then
-            invalid_arg
-              "infinite loop detected in many: parser did not consume anything"
-          else loop (v :: acc) rest
-      | Error _ ->
-          Ok (List.rev acc, inp)
-    in
-    loop [] inp
-
-  let many1 p = pipe2 p (many p) (fun hd tl -> hd :: tl)
-
-  let discard_with v p =
-    let& _ = p in
-    return v
-
-  let discard_right p1 p2 =
-    let& res1 = p1 in
-    let& _ = p2 in
-    return res1
-
-  let discard_left p1 p2 =
-    let& _ = p1 in
-    p2
-
-  let lift = function Ok v -> return v | Error msg -> error msg
-
-  module Infix = struct
-    let ( let& ) = bind
-
-    let ( <|> ) = or_
-
-    let ( >>& ) = discard_left
-
-    let ( &>> ) = discard_right
-
-    let ( &>>& ) = tuple2
-
-    let ( => ) p f = pipe f p
-  end
-end
-
-module Lazy_list_patche = struct
-  include Make (struct
-    type 't input = 't Lazy_list.t Lazy.t
-  end)
-
-  let any inp =
-    match Lazy.force inp with
-    | Lazy_list.Cons (v, rest) ->
-        Ok (v, rest)
-    | Lazy_list.Nil ->
-        Error "empty"
-
-  let eoi inp =
-    match Lazy.force inp with
-    | Lazy_list.Nil ->
-        Ok ((), inp)
-    | Lazy_list.Cons _ ->
-        Error "not eoi"
-
-  let apply f inp =
-    match any inp with
-    | Ok (v, rest) ->
-        f v |> Result.map (fun v -> (v, rest))
-    | Error _ as err ->
-        err
+  let ( => ) p f = pipe f p
 end
 
 module Attr = struct
+  type input = Xmlm.attribute list
+
+  type 'a t = input -> ('a, string) result
+
   let list_remove_opt f =
     let rec loop prev = function
       | [] ->
@@ -332,17 +183,11 @@ module Attr = struct
     | None, _ ->
         Error (Printf.sprintf "couldn't find attribute '%s'" name)
 
-  include Make (struct
-    type _ input = Xmlm.attribute list
-  end)
-
-  let eoi = function [] -> Ok () | _ -> Error "trailing elements detected"
-
-  type 'a t = Xmlm.attribute list -> ('a, string) result
-
-  let str_o = optional
+  let eoi = function [] -> Ok ((), []) | _ -> Error "trailing elements detected"
 
   let str = required
+
+  let str_o = optional
 
   let opt_conv v f err =
     match v with
@@ -358,12 +203,11 @@ module Attr = struct
     opt_conv v int_of_string_opt
       (Printf.sprintf "failed to convert attribute '%s' to int: %S" name)
 
-     (*
   let int name =
-    *)
+     (*
   let int : string -> (int, Xmlm.attribute list) parser =
     fun name ->
-
+    *)
     let& v = required name in
     int_of_string_opt v
     |> Option.to_result
@@ -377,7 +221,6 @@ module Attr = struct
       (Printf.sprintf "failed to convert attribute '%s' to bool: %S" name)
 
   (*
-
   let bool_f name attrs =
       bool_o name attrs
         |> Result.map (fun (v, rest) -> Option.value ~default:false v, rest)
@@ -401,36 +244,37 @@ module Attr = struct
 
   let run p attrs =
     let* res, attrs = p attrs in
-    let* () = eoi attrs in
+    let* (), _ = eoi attrs in
     Ok res
 end
 
-module Xml : sig
+module Xml = struct
   type input = Xmlm.signal Lazy_list.t Lazy.t
 
-  val data : (string, input) Lazy_list_patche.parser
+  type 'a t = ('a, input) parser
 
-  val dtd : (Xmlm.dtd, input) Lazy_list_patche.parser
+  open Infix
 
-  val el : string -> (unit, input) Lazy_list_patche.parser
+  let any inp =
+    match Lazy.force inp with
+    | Lazy_list.Cons (v, rest) ->
+        Ok (v, rest)
+    | Lazy_list.Nil ->
+        Error "empty"
 
-  val el_a : string -> 'a Attr.t -> ('a, input) Lazy_list_patche.parser
+  let eoi inp =
+    match Lazy.force inp with
+    | Lazy_list.Nil ->
+        Ok ((), inp)
+    | Lazy_list.Cons _ ->
+        Error "not eoi"
 
-  val el_b :
-       string
-    -> ('a, input) Lazy_list_patche.parser
-    -> ('a, input) Lazy_list_patche.parser
-
-  val el_ab :
-       string
-    -> 'a Attr.t
-    -> ('b, input) Lazy_list_patche.parser
-    -> ('a * 'b, input) Lazy_list_patche.parser
-end = struct
-  open Lazy_list_patche
-  open Lazy_list_patche.Infix
-
-  type input = Xmlm.signal Lazy_list.t Lazy.t
+  let apply f inp =
+    match any inp with
+    | Ok (v, rest) ->
+        f v |> Result.map (fun v -> (v, rest))
+    | Error _ as err ->
+        err
 
   let data =
     apply @@ function `Data data -> Ok data | _ -> Error "expected `Data"

@@ -77,18 +77,12 @@ val map6 :
   -> ('f, 'inp) parser
   -> ('g, 'inp) parser
 
-val pipe : ('a -> 'b) -> ('a, 'inp) parser -> ('b, 'inp) parser
-
-val pipe2 :
-     ('a, 'inp) parser
-  -> ('b, 'inp) parser
-  -> ('a -> 'b -> 'c)
-  -> ('c, 'inp) parser
-
 val pipe_result :
   ('a -> ('b, string) result) -> ('a, 'inp) parser -> ('b, 'inp) parser
 
 val discard_with : 'a -> (_, 'inp) parser -> ('a, 'inp) parser
+
+val discard : (_, 'inp) parser -> (unit, 'inp) parser
 
 val discard_right : ('a, 'inp) parser -> (_, 'inp) parser -> ('a, 'inp) parser
 
@@ -103,6 +97,9 @@ module Infix : sig
   val ( <|> ) : ('a, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
   val ( ->> ) : ('a, 'inp) parser -> ('a -> 'b) -> ('b, 'inp) parser
+
+  val ( ->= ) :
+    ('a, 'inp) parser -> ('a -> ('b, string) result) -> ('b, 'inp) parser
 
   val ( *> ) : (_, 'inp) parser -> ('a, 'inp) parser -> ('a, 'inp) parser
 
@@ -162,4 +159,6 @@ module Xml : sig
   val el_discard : string -> (unit, input) parser
 
   val run : ('a, input) parser -> input -> ('a, string) result
+
+  val inp : string -> input
 end

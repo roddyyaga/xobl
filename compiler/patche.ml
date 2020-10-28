@@ -85,15 +85,6 @@ let map6 f p1 p2 p3 p4 p5 p6 =
   let& res6 = p6 in
   return (f res1 res2 res3 res4 res5 res6)
 
-let pipe f p =
-  let& res = p in
-  return (f res)
-
-let pipe2 p1 p2 f =
-  let& res1 = p1 in
-  let& res2 = p2 in
-  return (f res1 res2)
-
 let pipe_result f p inp =
   match p inp with
   | Ok (v, rest) ->
@@ -121,11 +112,13 @@ let many p inp =
   in
   loop [] inp
 
-let many1 p = pipe2 p (many p) (fun hd tl -> hd :: tl)
+let many1 p = map2 (fun hd tl -> hd :: tl) p (many p)
 
 let discard_with v p =
   let& _ = p in
   return v
+
+let discard p = discard_with () p
 
 let discard_right p1 p2 =
   let& res1 = p1 in
@@ -145,7 +138,9 @@ module Infix = struct
 
   let ( <|> ) = or_
 
-  let ( ->> ) p f = pipe f p
+  let ( ->> ) p f = map f p
+
+  let ( ->= ) p f = pipe_result f p
 
   let ( *> ) = discard_left
 
@@ -325,7 +320,7 @@ module Xml = struct
     let inner =
       fix
       @@ fun el_discard ->
-      discard_with () data <|> el_start_any *> el_discard *> el_end
+      many (discard data <|> el_start_any *> el_discard *> el_end) |> discard
     in
     el_start name *> inner *> el_end
 
@@ -333,4 +328,32 @@ module Xml = struct
     let* res, inp = p inp in
     let* (), _ = eoi inp in
     Ok res
+
+  let inp str =
+    let i =
+      Xmlm.make_input ~strip:true (`String (0, str)) |> Lazy_list.of_xml_input
+    in
+    match Lazy.force i with
+    | Lazy_list.Nil ->
+        failwith "what"
+    | Lazy_list.Cons (_, rest) ->
+        rest
+
+  let%test_module "el_discard" =
+    ( module struct
+      let%test "empty" = run (el_discard "el") (inp "<el></el>") = Ok ()
+
+      let%test "data" = run (el_discard "el") (inp "<el>a</el>") = Ok ()
+
+      let%test "single element" =
+        run (el_discard "el") (inp "<el><a /></el>") = Ok ()
+
+      let%test "multiple elements" =
+        run (el_discard "el") (inp "<el><a /><a /></el>") = Ok ()
+
+      let%test "nested elements" =
+        run (el_discard "el")
+          (inp "<el><a><b>c<c><d />d</c></b><ee>asd</ee></a></el>")
+        = Ok ()
+    end )
 end

@@ -80,11 +80,7 @@ type field =
 
 type switch_cond = Cond_bit_and of expression | Cond_eq of expression
 
-type switch =
-  { sw_name : string
-  ; sw_cond : expression (* SHOULDBE switch_cond *)
-  ; sw_cases : case list
-  }
+type switch = { sw_name : string; sw_cond : switch_cond; sw_cases : case list }
 
 and case =
   { cs_name : string option
@@ -92,6 +88,9 @@ and case =
   ; cs_fields : field list
   ; cs_switch : switch option
   }
+
+type request_reply =
+  { fields : field list; switch : switch option; doc : doc option }
 
 type declaration =
   | Import of string
@@ -113,30 +112,24 @@ type declaration =
       ; doc : doc option
       }
   | Error of { name : string; number : int; fields : field list }
+  | Struct of { name : string; fields : field list; switch : switch option }
+  | Request of
+      { name : string
+      ; opcode : int
+      ; combine_adjacent : bool
+      ; fields : field list
+      ; switch : switch option
+      ; reply : request_reply option
+      ; doc : doc option
+      }
 
-(* ayy *)
-(*
-
-type prim = Card8 | Card16 | Card32 | Char | Bool | Byte
-
-type type_ = Primitive of prim | Alias of string
-
-type pad = Pad_bytes of int | Pad_align of int
-
-type binop = Multiply
-
-type expression = Value of int | Binop of binop * expression * expression
-
-type struct_item =
-  | Field of { type_ : string; name : string }
-  | List of { type_ : string; name : string; length : string }
-  | Pad of pad
-
-type enum_item = Enum_value of int | Enum_bit of int
-
-type declaration =
-  | Xidtype of string
-  | Typedef of { old_name : string; new_name : string }
-  | Struct of string * struct_item list
-  | Enum of string * enum_item list
-*)
+type xcb =
+  | Core of declaration list
+  | Extension of
+      { name : string
+      ; file_name : string
+      ; query_name : string
+      ; multiword : bool
+      ; version : int * int
+      ; declarations : declaration list
+      }

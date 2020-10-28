@@ -46,6 +46,15 @@ let tuple4 p1 p2 p3 p4 =
   let& res4 = p4 in
   return (res1, res2, res3, res4)
 
+let tuple6 p1 p2 p3 p4 p5 p6 =
+  let& res1 = p1 in
+  let& res2 = p2 in
+  let& res3 = p3 in
+  let& res4 = p4 in
+  let& res5 = p5 in
+  let& res6 = p6 in
+  return (res1, res2, res3, res4, res5, res6)
+
 let map f p =
   let& res = p in
   return (f res)
@@ -241,6 +250,13 @@ module Xml = struct
     match Lazy.force inp with
     | Lazy_list.Cons (v, rest) ->
         Ok (v, rest)
+    | Lazy_list.Nil ->
+        Error "empty"
+
+  let peek inp =
+    match Lazy.force inp with
+    | Lazy_list.Cons (v, _) ->
+        Ok (v, inp)
     | Lazy_list.Nil ->
         Error "empty"
 

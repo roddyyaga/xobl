@@ -1,21 +1,8 @@
-let mk_xidunion (name, types) = `Xidunion (name, types)
-
-let mk_xidtype name = `Xidtype name
-
-let mk_extension_info name file_name query_name multiword major minor =
-  (name, file_name, query_name, multiword, major, minor)
-
-let mk_core decls = `A decls
-
-let mk_extension x = `B x
-
 let try_parse_int s =
   int_of_string_opt s |> Option.to_result ~none:"failed to parse int"
 
 let try_parse_int64 s =
   Int64.of_string_opt s |> Option.to_result ~none:"failed to parse int64"
-
-(* ayy *)
 
 open Parsetree
 
@@ -98,6 +85,27 @@ let mk_switch (sw_name, (sw_cond, sw_cases)) = { sw_name; sw_cond; sw_cases }
 
 let mk_case (cs_name, (cs_cond, cs_fields, cs_switch)) =
   { cs_name; cs_cond; cs_fields; cs_switch }
+
+let mk_struct (name, (fields, switch)) = Struct { name; fields; switch }
+
+let mk_request_reply ((fields, switch), doc) = { fields; switch; doc }
+
+let mk_request ((name, opcode, combine_adjacent), (fields, switch, reply, doc))
+    =
+  Request { name; opcode; combine_adjacent; fields; switch; reply; doc }
+
+let mk_core decls = Core decls
+
+let mk_extension
+    ((name, file_name, query_name, multiword, major, minor), declarations) =
+  Extension
+    { name
+    ; file_name
+    ; query_name
+    ; multiword
+    ; version = (major, minor)
+    ; declarations
+    }
 
 open Patche
 open Patche.Xml
@@ -220,17 +228,29 @@ let field =
     ; field ->> mk_field ]
 
 let switch switch =
-  let switch_case =
-    el_ab "case"
-      (* WRONG *) (Attr.str_o "name")
+  let switch_case type_ =
+    el_ab type_ (Attr.str_o "name")
       (tuple3
          (many expression *< opt required_start_align)
          (many field) (opt switch))
     ->> mk_case
   in
-  el_ab "switch" (Attr.str "name")
-    (expression (* WRONG *) *< opt required_start_align *<> many switch_case)
-  ->> mk_switch
+  let switch_body =
+    let& cond_expr = expression in
+    let& _ = required_start_align in
+    let& case1 = peek in
+    let cond, case_type =
+      match case1 with
+      | `El_start ((_, "case"), _) ->
+          (Cond_eq cond_expr, "case")
+      | `El_start ((_, "bitcase"), _) ->
+          (Cond_bit_and cond_expr, "bitcase")
+      | _ ->
+          failwith "expected `El_start case or bitcase"
+    in
+    tuple2 (return cond) (many (switch_case case_type))
+  in
+  el_ab "switch" (Attr.str "name") switch_body ->> mk_switch
 
 let switch = fix switch
 
@@ -252,19 +272,22 @@ let error =
 
 let union = el_ab "union" (Attr.str "name") (many field) ->> mk_union
 
-let struct_ = el_ab "struct" (Attr.str "name") (many field *<> opt switch)
+let struct_ =
+  el_ab "struct" (Attr.str "name") (many field *<> opt switch) ->> mk_struct
 
 let request_reply =
-  opt required_start_align *> many field *<> opt switch *<> opt doc
+  el_b "reply"
+    (opt required_start_align *> many field *<> opt switch *<> opt doc)
+  ->> mk_request_reply
 
 let request =
   el_ab "request"
     (tuple3 (Attr.str "name") (Attr.int "opcode")
        (Attr.bool ~default:true "combine-adjacent"))
-    (map5
-       (fun _ fields switch reply doc -> (fields, switch, reply, doc))
-       (opt required_start_align) (many field) (opt switch) request_reply
-       (opt doc))
+    (tuple4
+       (opt required_start_align *> many field)
+       (opt switch) (opt request_reply) (opt doc))
+  ->> mk_request
 
 let declaration =
   choice
@@ -277,20 +300,20 @@ let declaration =
     ; event_copy
     ; error_copy
     ; union
-    ; event ]
+    ; event
+    ; struct_ ]
 
 let core =
   let attrs = Attr.str "header" |> satisfies (( = ) "xproto") in
-  el_ab "xcb" attrs (many declaration) ->> snd
+  el_ab "xcb" attrs (many declaration) ->> snd ->> mk_core
 
 let extension =
   let attrs =
     let open Attr in
-    map6 mk_extension_info (str "extension-name") (str "header")
-      (str "extension-xname")
-      (bool "extension_multiword" ~default:false)
+    tuple6 (str "extension-name") (str "header") (str "extension-xname")
+      (bool ~default:false "extension_multiword")
       (int "major-version") (int "minor-version")
   in
-  el_ab "xcb" attrs (many declaration)
+  el_ab "xcb" attrs (many declaration) ->> mk_extension
 
-let xcb = dtd *> (core ->> mk_core <|> extension ->> mk_extension) *< eoi
+let xcb = dtd *> (core <|> extension) *< eoi

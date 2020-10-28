@@ -35,6 +35,15 @@ val tuple4 :
   -> ('d, 'inp) parser
   -> ('a * 'b * 'c * 'd, 'inp) parser
 
+val tuple6 :
+     ('a, 'inp) parser
+  -> ('b, 'inp) parser
+  -> ('c, 'inp) parser
+  -> ('d, 'inp) parser
+  -> ('e, 'inp) parser
+  -> ('f, 'inp) parser
+  -> ('a * 'b * 'c * 'd * 'e * 'f, 'inp) parser
+
 val map : ('a -> 'b) -> ('a, 'inp) parser -> ('b, 'inp) parser
 
 val map2 :
@@ -136,6 +145,8 @@ module Xml : sig
   type 'a t = ('a, input) parser
 
   val eoi : (unit, input) parser
+
+  val peek : (Xmlm.signal, input) parser
 
   val dtd : (Xmlm.dtd, input) parser
 

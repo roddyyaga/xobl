@@ -160,4 +160,6 @@ module Xml : sig
     string -> 'a Attr.t -> ('b, input) parser -> ('a * 'b, input) parser
 
   val el_discard : string -> (unit, input) parser
+
+  val run : ('a, input) parser -> input -> ('a, string) result
 end

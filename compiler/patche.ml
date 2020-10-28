@@ -9,6 +9,8 @@ let bind parser f inp =
 
 let ( let& ) = bind
 
+let ( let* ) = Result.bind
+
 let satisfies test p =
   let& res = p in
   if test res then return res else error "test failed"
@@ -227,8 +229,6 @@ module Attr = struct
     | (Error _ as err), _ ->
         err
 
-  let ( let* ) = Result.bind
-
   let run p attrs =
     let* res, attrs = p attrs in
     let* (), _ = eoi attrs in
@@ -276,8 +276,14 @@ module Xml = struct
     @@ function
     | `El_start ((_, n), attrs) when n = name ->
         (Attr.run attr) attrs
-    | _ ->
-        Error ("expected `El_start: " ^ name)
+    | `El_start ((_, n), _) ->
+        Error ("expected <" ^ name ^ "> but got " ^ n)
+    | `El_end ->
+        Error "expected `El_start, got `El_end"
+    | `Data _ ->
+        Error "expected `El_start, got `Data"
+    | `Dtd _ ->
+        Error "expected `El_start, got `Dtd"
 
   let el_start name =
     apply
@@ -286,8 +292,14 @@ module Xml = struct
         Ok ()
     | `El_start ((_, n), _) when n = name ->
         Error "expected `El_start with no attributes"
-    | _ ->
-        Error ("expected `El_start: " ^ name)
+    | `El_start ((_, n), _) ->
+        Error ("expected <" ^ name ^ "> but got " ^ n)
+    | `El_end ->
+        Error "expected `El_start, got `El_end"
+    | `Data _ ->
+        Error "expected `El_start, got `Data"
+    | `Dtd _ ->
+        Error "expected `El_start, got `Dtd"
 
   let el_end =
     apply
@@ -316,4 +328,9 @@ module Xml = struct
       discard_with () data <|> el_start_any *> el_discard *> el_end
     in
     el_start name *> inner *> el_end
+
+  let run p inp =
+    let* res, inp = p inp in
+    let* (), _ = eoi inp in
+    Ok res
 end

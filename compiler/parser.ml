@@ -44,6 +44,24 @@ let eventstruct =
 let doc =
   el_discard "doc" |> discard_with (`Docs "docs parsing not implemented")
 
+let inp str =
+  let i =
+    Xmlm.make_input ~strip:true (`String (0, str)) |> Lazy_list.of_xml_input
+  in
+  match Lazy.force i with
+  | Lazy_list.Nil ->
+      failwith "what"
+  | Lazy_list.Cons (_, rest) ->
+      rest
+
+let%test "doc" =
+  run doc (inp "<doc>a</doc>") = Ok (`Docs "docs parsing not implemented")
+
+(*
+let%test "doc 2" =
+  run doc (inp "<doc></doc>") = Ok (`Docs "docs parsing not implemented")
+  *)
+
 let enum_item =
   let value_item = el_b "value" data |> pipe_result try_parse_int64 in
   let bit_item = el_b "bit" data |> pipe_result try_parse_int in

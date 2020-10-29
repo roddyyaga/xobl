@@ -48,24 +48,6 @@ let event_copy = copy "eventcopy" mk_event_copy
 
 let error_copy = copy "errorcopy" mk_error_copy
 
-let binop = function
-  | "+" ->
-      Ok Add
-  | "-" ->
-      Ok Sub
-  | "*" ->
-      Ok Mul
-  | "/" ->
-      Ok Div
-  | "&" ->
-      Ok Bit_and
-  | "<<" ->
-      Ok Bit_left_shift
-  | o ->
-      Error ("invalid binop: " ^ o)
-
-let unop = function "~" -> Ok Bit_not | o -> Error ("invalid unop: " ^ o)
-
 let expression expression =
   let binop =
     el_ab "op" (Attr.str "op" ->= binop) (tuple2 expression expression)

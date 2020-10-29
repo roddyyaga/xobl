@@ -65,6 +65,24 @@ let mk_type id =
     | None ->
         Type_ref id )
 
+let binop = function
+  | "+" ->
+      Ok Add
+  | "-" ->
+      Ok Sub
+  | "*" ->
+      Ok Mul
+  | "/" ->
+      Ok Div
+  | "&" ->
+      Ok Bit_and
+  | "<<" ->
+      Ok Bit_left_shift
+  | o ->
+      Error ("invalid binop: " ^ o)
+
+let unop = function "~" -> Ok Bit_not | o -> Error ("invalid unop: " ^ o)
+
 let mk_required_start_align al_align al_offset = { al_align; al_offset }
 
 let mk_item_value value = Item_value value

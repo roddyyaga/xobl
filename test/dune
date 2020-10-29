@@ -1,6 +1,4 @@
-;(tests
-; (libraries xobl_bindings xobl_compiler)
-; (names create_window)
-; (deps xproto_simple.xml)
-; (preprocess
-;  (pps lwt_ppx)))
+(test
+ (libraries xobl_compiler)
+ (name print_parser_output)
+ (deps (glob_files ../protocol/*.xml)))

@@ -130,7 +130,7 @@ let switch switch =
   in
   let switch_body =
     let& cond_expr = expression in
-    let& _ = required_start_align in
+    let& _ = opt required_start_align in
     let& case1 = peek in
     let cond, case_type =
       match case1 with
@@ -194,7 +194,9 @@ let declaration =
     ; error_copy
     ; union
     ; event
-    ; struct_ ]
+    ; error
+    ; struct_
+    ; request ]
 
 let core =
   let attrs = Attr.str "header" |> satisfies (( = ) "xproto") in
@@ -204,7 +206,7 @@ let extension =
   let attrs =
     let open Attr in
     tuple6 (str "extension-name") (str "header") (str "extension-xname")
-      (bool ~default:false "extension_multiword")
+      (bool ~default:false "extension-multiword")
       (int "major-version") (int "minor-version")
   in
   el_ab "xcb" attrs (many declaration) ->> mk_extension

@@ -1,4 +1,5 @@
 (test
  (libraries xobl_compiler)
  (name print_parser_output)
- (deps (glob_files ../protocol/*.xml)))
+ (deps
+  (glob_files ../protocol/*.xml)))

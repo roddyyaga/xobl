@@ -17,10 +17,12 @@ let import = el_b "import" data ->> mk_import
 let xid = el_a "xidtype" (Attr.str "name") ->> mk_xid
 
 let xid_union =
-  el_ab "xidunion" Attr.(str "name") (many (el_b "type" data)) ->> mk_xid_union
+  el_ab "xidunion" Attr.(str "name") (many (el_b "type" data ->> mk_ident))
+  ->> mk_xid_union
 
 let typedef =
-  el_a "typedef" Attr.(map2 mk_typedef (str "newname") (str "oldname"))
+  el_a "typedef"
+    Attr.(map2 mk_typedef (str "newname") (str "oldname" ->> mk_type))
 
 let event_struct =
   el_ab "eventstruct" (Attr.str "name")
@@ -40,7 +42,7 @@ let enum : declaration parser =
   ->> mk_enum
 
 let copy name mk =
-  el_a name Attr.(map3 mk (str "name") (str "ref") (int "number"))
+  el_a name Attr.(map3 mk (str "name") (str "ref" ->> mk_ident) (int "number"))
 
 let event_copy = copy "eventcopy" mk_event_copy
 
@@ -70,8 +72,8 @@ let expression expression =
   in
   let unop = el_ab "unop" (Attr.str "op" ->= unop) expression in
   let field_ref = el_b "fieldref" data in
-  let param_ref = el_ab "paramref" (Attr.str "type") data in
-  let enum_ref = el_ab "enumref" (Attr.str "ref") data in
+  let param_ref = el_ab "paramref" (Attr.str "type" ->> mk_type) data in
+  let enum_ref = el_ab "enumref" (Attr.str "ref" ->> mk_ident) data in
   let pop_count = el_b "popcount" expression in
   let sum_of = el_ab "sumof" (Attr.str "ref") (opt expression) in
   let list_element_ref = el "listelement-ref" in
@@ -94,7 +96,8 @@ let expression : expression parser = fix expression
 let field_attr =
   let open Attr in
   tuple2 (str "name")
-    (map2 mk_field_type (str "type")
+    (map2 mk_field_type
+       (str "type" ->> mk_type)
        (opt
           (choice
              [ str "enum" ->> mk_allowed_enum

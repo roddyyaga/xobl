@@ -6,6 +6,65 @@ let try_parse_int64 s =
 
 open Parsetree
 
+let mk_ident id =
+  match String.index_opt id ':' with
+  | None ->
+      { id_module = None; id_name = id }
+  | Some i ->
+      let m = String.sub id 0 i in
+      let id = String.sub id (i + 1) (String.length id - i - 1) in
+      { id_module = Some m; id_name = id }
+
+let%test _ = mk_ident "abc" = { id_module = None; id_name = "abc" }
+
+let%test _ = mk_ident ":" = { id_module = Some ""; id_name = "" }
+
+let%test _ =
+  mk_ident "abcde:fgh" = { id_module = Some "abcde"; id_name = "fgh" }
+
+let prim_of_string_opt = function
+  | "void" ->
+      Some Void
+  | "char" ->
+      Some Char
+  | "BYTE" ->
+      Some Byte
+  | "BOOL" ->
+      Some Bool
+  | "INT8" ->
+      Some Int8
+  | "INT16" ->
+      Some Int16
+  | "INT32" ->
+      Some Int32
+  | "fd" ->
+      Some Fd
+  | "CARD8" ->
+      Some Card8
+  | "CARD16" ->
+      Some Card16
+  | "CARD32" ->
+      Some Card32
+  | "CARD64" ->
+      Some Card64
+  | "float" ->
+      Some Float
+  | "double" ->
+      Some Double
+  | _ ->
+      None
+
+let mk_type id =
+  match mk_ident id with
+  | { id_module = Some _; _ } as id ->
+      Type_ref id
+  | { id_module = None; id_name } as id -> (
+    match prim_of_string_opt id_name with
+    | Some prim ->
+        Type_primitive prim
+    | None ->
+        Type_ref id )
+
 let mk_required_start_align al_align al_offset = { al_align; al_offset }
 
 let mk_item_value value = Item_value value
@@ -14,8 +73,8 @@ let mk_item_bit bit = Item_bit bit
 
 let mk_enum (name, (items, doc)) = Enum { name; items; doc }
 
-let mk_allowed_events ae_extension ae_is_xge min max =
-  { ae_extension; ae_is_xge; ae_opcode_range = { min; max } }
+let mk_allowed_events ae_module ae_is_xge min max =
+  { ae_module; ae_is_xge; ae_opcode_range = { min; max } }
 
 let mk_event_struct (name, allowed_events) =
   Event_struct { name; allowed_events }
@@ -54,13 +113,13 @@ let mk_pad_bytes b = Pad_bytes b
 
 let mk_pad_align n = Pad_align n
 
-let mk_allowed_enum name = Allowed_enum name
+let mk_allowed_enum name = Allowed_enum (mk_ident name)
 
-let mk_allowed_mask name = Allowed_mask name
+let mk_allowed_mask name = Allowed_mask (mk_ident name)
 
-let mk_allowed_alt_enum name = Allowed_enum name
+let mk_allowed_alt_enum name = Allowed_enum (mk_ident name)
 
-let mk_allowed_alt_mask name = Allowed_mask name
+let mk_allowed_alt_mask name = Allowed_mask (mk_ident name)
 
 let mk_field_type ft_type ft_allowed = { ft_type; ft_allowed }
 

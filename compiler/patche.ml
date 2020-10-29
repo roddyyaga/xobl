@@ -318,7 +318,10 @@ module Xml = struct
     | `El_end ->
         Ok ()
     | `El_start ((_, n), attrs) ->
-      let attrs = String.concat "&" (List.map (fun ((_, k), v) -> Printf.sprintf "%s=%s" k v) attrs) in
+        let attrs =
+          String.concat "&"
+            (List.map (fun ((_, k), v) -> Printf.sprintf "%s=%s" k v) attrs)
+        in
         Error ("expected `El_end, received `El_start " ^ n ^ " " ^ attrs)
     | `Data data ->
         Error ("expected `El_end, received `Data \"" ^ data ^ "\"")

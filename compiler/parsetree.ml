@@ -45,12 +45,34 @@ type binop = Add | Sub | Mul | Div | Bit_and | Bit_left_shift
 
 type unop = Bit_not [@@deriving show]
 
+type ident = { id_module : string option; id_name : string } [@@deriving show]
+
+type prim =
+  | Void
+  | Char
+  | Byte
+  | Bool
+  | Int8
+  | Int16
+  | Int32
+  | Fd
+  | Card8
+  | Card16
+  | Card32
+  | Card64
+  | Float
+  | Double
+  | Xid  (** maps to a Card32 *)
+[@@deriving show]
+
+type type_ = Type_primitive of prim | Type_ref of ident [@@deriving show]
+
 type expression =
   | Binop of binop * expression * expression
   | Unop of unop * expression
   | Field_ref of string
-  | Param_ref of { param : string; type_ : string }
-  | Enum_ref of { enum : string; item : string }
+  | Param_ref of { param : string; type_ : type_ }
+  | Enum_ref of { enum : ident; item : string }
   | Pop_count of expression
   | Sum_of of { field : string; by_expr : expression option }
   | List_element_ref
@@ -61,19 +83,19 @@ type expression =
 type 'a range = { min : 'a; max : 'a } [@@deriving show]
 
 type allowed_events =
-  { ae_extension : string; ae_opcode_range : int range; ae_is_xge : bool }
+  { ae_module : string; ae_opcode_range : int range; ae_is_xge : bool }
 [@@deriving show]
 
 type pad = Pad_bytes of int | Pad_align of int [@@deriving show]
 
 type field_allowed =
-  | Allowed_enum of string
-  | Allowed_mask of string
-  | Allowed_alt_enum of string
-  | Allowed_alt_mask of string
+  | Allowed_enum of ident
+  | Allowed_mask of ident
+  | Allowed_alt_enum of ident
+  | Allowed_alt_mask of ident
 [@@deriving show]
 
-type field_type = { ft_type : string; ft_allowed : field_allowed option }
+type field_type = { ft_type : type_; ft_allowed : field_allowed option }
 [@@deriving show]
 
 type field =
@@ -106,10 +128,10 @@ type request_reply =
 type declaration =
   | Import of string
   | Xid of string
-  | Xid_union of { name : string; types : string list }
-  | Typedef of { name : string; type_ : string }
-  | Event_copy of { name : string; event : string; ev_number : int }
-  | Error_copy of { name : string; error : string; er_number : int }
+  | Xid_union of { name : string; types : ident list }
+  | Typedef of { name : string; type_ : type_ }
+  | Event_copy of { name : string; event : ident; ev_number : int }
+  | Error_copy of { name : string; error : ident; er_number : int }
   | Enum of
       { name : string; items : (string * enum_item) list; doc : doc option }
   | Event_struct of { name : string; allowed_events : allowed_events list }

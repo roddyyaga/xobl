@@ -1,10 +1,10 @@
 open Parsetree
 open Parser_utils
-open Patche
+open Patche.Combinators
+open Patche.Combinators.Infix
 open Patche.Xml
-open Patche.Infix
 
-type 'a parser = 'a Patche.Xml.t
+type 'a parser = ('a, Parser_utils.error) Patche.Xml.t
 
 let doc = el_discard "doc" |> discard_with Doc
 

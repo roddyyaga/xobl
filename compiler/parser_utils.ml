@@ -1,8 +1,11 @@
+type error = [Patche.Xml.error | `Conversion_failed_ of string * string]
+
 let try_parse_int s =
-  int_of_string_opt s |> Option.to_result ~none:"failed to parse int"
+  int_of_string_opt s |> Option.to_result ~none:(`Conversion_failed_ ("int", s))
 
 let try_parse_int64 s =
-  Int64.of_string_opt s |> Option.to_result ~none:"failed to parse int64"
+  Int64.of_string_opt s
+  |> Option.to_result ~none:(`Conversion_failed_ ("int64", s))
 
 open Parsetree
 
@@ -79,9 +82,13 @@ let binop = function
   | "<<" ->
       Ok Bit_left_shift
   | o ->
-      Error ("invalid binop: " ^ o)
+      Error (`Conversion_failed_ ("binop", o))
 
-let unop = function "~" -> Ok Bit_not | o -> Error ("invalid unop: " ^ o)
+let unop = function
+  | "~" ->
+      Ok Bit_not
+  | o ->
+      Error (`Conversion_failed_ ("unop", o))
 
 let mk_required_start_align al_align al_offset = { al_align; al_offset }
 

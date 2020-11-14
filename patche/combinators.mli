@@ -8,23 +8,16 @@ val return : 't -> ('t, 'inp, 'err) parser
 
 val error : 'err -> ('t, 'inp, 'err) parser
 
-val from_result : ('t, 'err) result -> ('t, 'inp, 'err) parser
-
-(* *)
 val satisfies :
   ('a -> bool) -> ('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser
+
+val opt : ('a, 'inp, 'err) parser -> ('a option, 'inp, 'err) parser
 
 val discard_with : 'a -> (_, 'inp, 'err) parser -> ('a, 'inp, 'err) parser
 
 val discard : (_, 'inp, 'err) parser -> (unit, 'inp, 'err) parser
 
-val discard_right :
-  ('a, 'inp, 'err) parser -> (_, 'inp, 'err) parser -> ('a, 'inp, 'err) parser
-
-val discard_left :
-  (_, 'inp, 'err) parser -> ('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser
-
-val opt : ('a, 'inp, 'err) parser -> ('a option, 'inp, 'err) parser
+val from_result : ('t, 'err) result -> ('t, 'inp, 'err) parser
 
 (* Monad *)
 val bind :
@@ -39,7 +32,24 @@ val map_result :
   -> ('a, 'inp, 'err) parser
   -> ('b, 'inp, 'err) parser
 
+(* Choice *)
+val or_ :
+  ('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser
+
+val choice : ('a, 'inp, 'err) parser list -> ('a, 'inp, 'err) parser
+
+(* Recursion *)
+val fix :
+     (('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser)
+  -> ('a, 'inp, 'err) parser
+
 (* Sequencing *)
+val discard_right :
+  ('a, 'inp, 'err) parser -> (_, 'inp, 'err) parser -> ('a, 'inp, 'err) parser
+
+val discard_left :
+  (_, 'inp, 'err) parser -> ('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser
+
 val many : ('a, 'inp, 'err) parser -> ('a list, 'inp, 'err) parser
 
 val many1 : ('a, 'inp, 'err) parser -> ('a list, 'inp, 'err) parser
@@ -110,17 +120,6 @@ val map6 :
   -> ('e, 'inp, 'err) parser
   -> ('f, 'inp, 'err) parser
   -> ('g, 'inp, 'err) parser
-
-(* Choice *)
-val or_ :
-  ('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser
-
-val choice : ('a, 'inp, 'err) parser list -> ('a, 'inp, 'err) parser
-
-(* Recursion *)
-val fix :
-     (('a, 'inp, 'err) parser -> ('a, 'inp, 'err) parser)
-  -> ('a, 'inp, 'err) parser
 
 module Infix : sig
   val ( let& ) :

@@ -132,7 +132,7 @@ let apply f inp =
 let data =
   apply @@ function `Data data -> Ok data | s -> Error (`Expected_data s)
 
-let dtd : (Xmlm.dtd, [> error ]) t =
+let dtd : (Xmlm.dtd, [> error]) t =
   apply @@ function `Dtd dtd -> Ok dtd | s -> Error (`Expected_dtd s)
 
 let el_start_any =

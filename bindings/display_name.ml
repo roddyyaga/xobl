@@ -13,7 +13,7 @@ type t = { hostname : hostname; display : int; screen : int }
 let default =
   { hostname = Unix_domain_socket "/tmp/.X11-unix/X0"; display = 0; screen = 0 }
 
-let ( let* ) = Option.bind
+let ( let& ) = Option.bind
 
 (* The display name has form [hostname]:displaynumber[.screennumber].
    The parts between brackets can be omitted.
@@ -21,7 +21,7 @@ let ( let* ) = Option.bind
    https://cgit.freedesktop.org/xorg/app/xauth/tree/parsedpy.c
    https://www.x.org/releases/X11R7.7/doc/man/man7/X.7.xhtml#heading5 *)
 let parse_name name =
-  let* colon = String.rindex_opt name ':' in
+  let& colon = String.rindex_opt name ':' in
   let hostname = String.sub name 0 colon in
   let last_half =
     String.sub name (colon + 1) (String.length name - colon - 1)
@@ -38,7 +38,7 @@ let parse_name name =
         in
         (display, Some screen)
   in
-  let* display = int_of_string_opt display in
+  let& display = int_of_string_opt display in
   match Option.map int_of_string_opt screen with
   | Some None ->
       None
@@ -134,6 +134,6 @@ let%test "garbage" = parse_hostname "/" ~display:0 = None
 let%test "invalid protocol" = parse_hostname "udp/x.org" ~display:0 = None
 
 let parse name =
-  let* hostname, display, screen = parse_name name in
-  let* hostname = parse_hostname ~display hostname in
+  let& hostname, display, screen = parse_name name in
+  let& hostname = parse_hostname ~display hostname in
   Some { hostname; display; screen = Option.value ~default:0 screen }

@@ -1,8 +1,14 @@
 let ( let& ) = Option.bind
 
 let open_display name =
-  let name = Display.try_get_name name in
-  let Display.{ hostname; display; screen } = Display.parse_name name in
+  let name =
+    match name with
+    | Some name ->
+        name
+    | None ->
+        Sys.getenv_opt "DISPLAY" |> Option.value ~default:":0"
+  in
+  let Display_name.{ hostname; display; screen } = Display_name.parse name |> Option.get in
   let%lwt socket, conn_info = Connection.open_display ~hostname ~display in
   let new_xid =
     let inc =

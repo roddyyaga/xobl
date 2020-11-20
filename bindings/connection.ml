@@ -5,7 +5,7 @@ let ( let* ) = Lwt.bind
 let open_display ~hostname ~display =
   let* domain, address, (xauth_name, xauth_data) =
     match hostname with
-    | Display.Unix_domain_socket path ->
+    | Display_name.Unix_domain_socket path ->
         let* localhost = Lwt_unix.gethostname () in
         let auth =
           let& xauth_path = Xauth.get_path () in
@@ -15,7 +15,7 @@ let open_display ~hostname ~display =
         in
         let auth = Option.value ~default:("", "") auth in
         Lwt.return (Unix.PF_UNIX, Unix.ADDR_UNIX path, auth)
-    | Display.Internet_domain (family, hostname, port) ->
+    | Display_name.Internet_domain (family, hostname, port) ->
         let family =
           match family with `Ipv4 -> Unix.PF_INET | `Ipv6 -> Unix.PF_INET6
         in

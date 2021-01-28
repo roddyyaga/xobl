@@ -165,18 +165,17 @@ let mk_event ((name, number, is_generic, no_sequence_number), (fields, doc)) =
 
 let mk_error ((name, number), fields) = Error { name; number; fields }
 
-let mk_switch (sw_name, (sw_cond, sw_cases)) = { sw_name; sw_cond; sw_cases }
+let mk_switch (sw_name, (sw_cond, sw_cases)) =
+  Field_switch { sw_name; sw_cond; sw_cases }
 
-let mk_case (cs_name, (cs_cond, cs_fields, cs_switch)) =
-  { cs_name; cs_cond; cs_fields; cs_switch }
+let mk_case (cs_name, (cs_cond, cs_fields)) = { cs_name; cs_cond; cs_fields }
 
-let mk_struct (name, (fields, switch)) = Struct { name; fields; switch }
+let mk_struct (name, fields) = Struct { name; fields }
 
-let mk_request_reply ((fields, switch), doc) = { fields; switch; doc }
+let mk_request_reply (fields, doc) = { fields; doc }
 
-let mk_request ((name, opcode, combine_adjacent), (fields, switch, reply, doc))
-    =
-  Request { name; opcode; combine_adjacent; fields; switch; reply; doc }
+let mk_request ((name, opcode, combine_adjacent), (fields, reply, doc)) =
+  Request { name; opcode; combine_adjacent; fields; reply; doc }
 
 let mk_core decls = Core decls
 

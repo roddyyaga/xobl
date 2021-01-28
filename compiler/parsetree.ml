@@ -98,15 +98,6 @@ type field_allowed =
 type field_type = { ft_type : type_; ft_allowed : field_allowed option }
 [@@deriving show]
 
-type field =
-  | Field_expr of { name : string; type_ : field_type; expr : expression }
-  | Field_list of
-      { name : string; type_ : field_type; length : expression option }
-  | Field_file_descriptor of string
-  | Field_pad of { pad : pad; serialize : bool }
-  | Field of { name : string; type_ : field_type }
-[@@deriving show]
-
 type switch_cond = Cond_bit_and of expression | Cond_eq of expression
 [@@deriving show]
 
@@ -114,16 +105,20 @@ type switch = { sw_name : string; sw_cond : switch_cond; sw_cases : case list }
 [@@deriving show]
 
 and case =
-  { cs_name : string option
-  ; cs_cond : expression list
-  ; cs_fields : field list
-  ; cs_switch : switch option
-  }
+  { cs_name : string option; cs_cond : expression list; cs_fields : field list }
 [@@deriving show]
 
-type request_reply =
-  { fields : field list; switch : switch option; doc : doc option }
+and field =
+  | Field_expr of { name : string; type_ : field_type; expr : expression }
+  | Field_list of
+      { name : string; type_ : field_type; length : expression option }
+  | Field_file_descriptor of string
+  | Field_pad of { pad : pad; serialize : bool }
+  | Field_switch of switch
+  | Field of { name : string; type_ : field_type }
 [@@deriving show]
+
+type request_reply = { fields : field list; doc : doc option } [@@deriving show]
 
 type declaration =
   | Import of string
@@ -145,13 +140,12 @@ type declaration =
       ; doc : doc option
       }
   | Error of { name : string; number : int; fields : field list }
-  | Struct of { name : string; fields : field list; switch : switch option }
+  | Struct of { name : string; fields : field list }
   | Request of
       { name : string
       ; opcode : int
       ; combine_adjacent : bool
       ; fields : field list
-      ; switch : switch option
       ; reply : request_reply option
       ; doc : doc option
       }

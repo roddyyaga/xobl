@@ -92,25 +92,15 @@ let pad_attr =
   bool ~default:false "serialize"
   *<> (int "bytes" ->> mk_pad_bytes <|> int "align" ->> mk_pad_align)
 
-let field =
+let field field =
   let exprfield = el_ab "exprfield" field_attr expression in
   let list = el_ab "list" field_attr (opt expression) in
   let fd = el_a "fd" (Attr.str "name") in
   let pad = el_a "pad" pad_attr in
-  let field = el_a "field" field_attr in
-  choice
-    [ exprfield ->> mk_field_expr
-    ; list ->> mk_field_list
-    ; fd ->> mk_field_file_descriptor
-    ; pad ->> mk_field_pad
-    ; field ->> mk_field ]
-
-let switch switch =
+  let normal_field = el_a "field" field_attr in
   let switch_case type_ =
     el_ab type_ (Attr.str_o "name")
-      (tuple3
-         (many expression *< opt required_start_align)
-         (many field) (opt switch))
+      (tuple2 (many expression *< opt required_start_align) (many field))
     ->> mk_case
   in
   let switch_body =
@@ -128,9 +118,16 @@ let switch switch =
     in
     tuple2 (return cond) (many (switch_case case_type))
   in
-  el_ab "switch" (Attr.str "name") switch_body ->> mk_switch
+  let switch = el_ab "switch" (Attr.str "name") switch_body in
+  choice
+    [ exprfield ->> mk_field_expr
+    ; list ->> mk_field_list
+    ; fd ->> mk_field_file_descriptor
+    ; pad ->> mk_field_pad
+    ; normal_field ->> mk_field
+    ; switch ->> mk_switch ]
 
-let switch = fix switch
+let field = fix field
 
 let event =
   let attrs =
@@ -150,21 +147,19 @@ let error =
 
 let union = el_ab "union" (Attr.str "name") (many field) ->> mk_union
 
-let struct_ =
-  el_ab "struct" (Attr.str "name") (many field *<> opt switch) ->> mk_struct
+let struct_ = el_ab "struct" (Attr.str "name") (many field) ->> mk_struct
 
 let request_reply =
-  el_b "reply"
-    (opt required_start_align *> many field *<> opt switch *<> opt doc)
+  el_b "reply" (opt required_start_align *> many field *<> opt doc)
   ->> mk_request_reply
 
 let request =
   el_ab "request"
     (tuple3 (Attr.str "name") (Attr.int "opcode")
        (Attr.bool ~default:true "combine-adjacent"))
-    (tuple4
+    (tuple3
        (opt required_start_align *> many field)
-       (opt switch) (opt request_reply) (opt doc))
+       (opt request_reply) (opt doc))
   ->> mk_request
 
 let declaration =

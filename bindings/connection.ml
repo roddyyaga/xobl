@@ -2,31 +2,32 @@ let ( let& ) = Option.bind
 
 let ( let* ) = Lwt.bind
 
+let get_socket_params ~display = function
+  | Display_name.Unix_domain_socket path ->
+      let* localhost = Lwt_unix.gethostname () in
+      let auth =
+        let& xauth_path = Xauth.get_path () in
+        Xauth.entries_from_file xauth_path
+        |> Xauth.get_best ~family:Xauth.Family.Local ~address:localhost ~display
+      in
+      let auth = Option.value ~default:("", "") auth in
+      Lwt.return (Unix.PF_UNIX, Unix.ADDR_UNIX path, auth)
+  | Display_name.Internet_domain (family, hostname, port) ->
+      let family =
+        match family with `Ipv4 -> Unix.PF_INET | `Ipv6 -> Unix.PF_INET6
+      in
+      let* addresses =
+        Lwt_unix.getaddrinfo hostname (string_of_int port)
+          [Unix.AI_SOCKTYPE Unix.SOCK_STREAM; Unix.AI_FAMILY family]
+      in
+      (* TODO: we should try to connect to all the results in order
+         instead of just picking the first. *)
+      let Unix.{ ai_family; ai_addr; _ } = List.hd addresses in
+      Lwt.return (ai_family, ai_addr, ("", ""))
+
 let open_display ~hostname ~display =
   let* domain, address, (xauth_name, xauth_data) =
-    match hostname with
-    | Display_name.Unix_domain_socket path ->
-        let* localhost = Lwt_unix.gethostname () in
-        let auth =
-          let& xauth_path = Xauth.get_path () in
-          Xauth.entries_from_file xauth_path
-          |> Xauth.get_best ~family:Xauth.Family.Local ~address:localhost
-               ~display
-        in
-        let auth = Option.value ~default:("", "") auth in
-        Lwt.return (Unix.PF_UNIX, Unix.ADDR_UNIX path, auth)
-    | Display_name.Internet_domain (family, hostname, port) ->
-        let family =
-          match family with `Ipv4 -> Unix.PF_INET | `Ipv6 -> Unix.PF_INET6
-        in
-        let* addresses =
-          Lwt_unix.getaddrinfo hostname (string_of_int port)
-            [Unix.AI_SOCKTYPE Unix.SOCK_STREAM; Unix.AI_FAMILY family]
-        in
-        (* TODO: we should try to connect to all the results in order
-           instead of just picking the first. *)
-        let Unix.{ ai_family; ai_addr; _ } = List.hd addresses in
-        Lwt.return (ai_family, ai_addr, ("", ""))
+    get_socket_params hostname ~display
   in
   let socket = Lwt_unix.socket domain Unix.SOCK_STREAM 0 in
   let* () = Lwt_unix.connect socket address in
@@ -54,3 +55,9 @@ module Xid_seed = struct
       let xid = Int32.logor last base in
       Lwt.return (xid, { last; inc; base; max })
 end
+
+type connection = {
+  socket: Lwt_unix.file_descr;
+  display_info: Protocol.handshake_resp;
+  xid_seed: Xid_seed.seed;
+};

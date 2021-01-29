@@ -78,7 +78,7 @@ type expression =
   | List_element_ref
   | Expr_value of int64
   | Expr_bit of int
-[@@deriving show, variants]
+[@@deriving show]
 
 type 'a range = { min : 'a; max : 'a } [@@deriving show]
 

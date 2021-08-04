@@ -21,8 +21,8 @@ module Casing = struct
           let prev = name.[i - 1] in
           if
             prev <> '_'
-            && ( Char.lowercase_ascii prev = prev
-               || is_last_of_acronym name i len )
+            && (Char.lowercase_ascii prev = prev
+               || is_last_of_acronym name i len)
           then Buffer.add_char buf '_';
           Buffer.add_char buf (Char.lowercase_ascii c)
       | c -> Buffer.add_char buf c);
@@ -122,14 +122,14 @@ module Ident = struct
     if name.[0] >= '0' && name.[0] <= '9' then "D" ^ name else name
 
   let snake ?prefix ?suffix name =
-    ( match (prefix, suffix) with
+    (match (prefix, suffix) with
     | Some prefix, Some suffix ->
         prefix ^ "_" ^ Casing.snake name ^ "_" ^ suffix
     | Some prefix, None -> prefix ^ "_" ^ Casing.snake name
     | None, Some suffix -> Casing.snake name ^ "_" ^ suffix
     | None, None ->
         let name = Casing.snake name in
-        if List.mem name ocaml_reserved then name ^ "_" else name )
+        if List.mem name ocaml_reserved then name ^ "_" else name)
     |> sanitize_numbers
 
   let caml name = Casing.caml name |> sanitize_numbers
@@ -171,7 +171,9 @@ let gen_to_int = function
   | Fd -> Some "Obj.magic"
   | Int32 | Card32 -> Some "Int32.to_int"
   | Card64 -> Some "Int64.to_int"
-  | Void | Float | Double -> failwith "a"
+  | (Void | Float | Double) as prim ->
+      failwith
+        (Format.asprintf "Can't generate to_int function for %a" pp_prim prim)
 
 let find_module_by_name xcbs name =
   List.find_map
@@ -237,8 +239,11 @@ let rec gen_expr out = function
   | Field_ref f -> output_string out (Ident.snake f)
   | Expr_value v -> Printf.fprintf out "%Ld" v
   | Expr_bit b -> Printf.fprintf out "1 lsl %d" b
-  | Param_ref _ | Enum_ref _ | Pop_count _ | Sum_of _ | List_element_ref ->
-      failwith "a"
+  | Param_ref { param; type_ = _ } -> Printf.fprintf out "%s" param
+  | Enum_ref _ -> failwith "Enum_ref"
+  | Pop_count _ -> failwith "Pop_count"
+  | Sum_of _ -> failwith "Sum_of"
+  | List_element_ref -> failwith "List_element_ref"
 
 let gen_ident (curr_module, _) out { id_module; id_name } =
   if curr_module = id_module then output_string out (Ident.snake id_name)
@@ -342,8 +347,15 @@ let gen_decode_field ctx _fields out = function
         (Ident.snake name)
         (gen_decode_field_type ctx)
         type_ (Ident.snake length)
-  | Field_expr _ | Field_list _ | Field_variant _ | Field_variant_tag _
-  | Field_optional _ | Field_optional_mask _ ->
+  | Field_list { name; type_; length = Some expr } ->
+      Printf.fprintf out "let* %s, at = decode_list %a (%a) buf ~at in"
+        (Ident.snake name)
+        (gen_decode_field_type ctx)
+        type_ gen_expr expr
+  | Field_list { length = None; _ } ->
+      failwith "Field_list with implicit length not supported yet"
+  | Field_expr _ | Field_variant _ | Field_variant_tag _ | Field_optional _
+  | Field_optional_mask _ ->
       ()
 
 (* | Field_optional { name; type_; _ } *)
@@ -363,8 +375,8 @@ let gen_decode_fields ctx out fields =
   output_string out "let orig = at in ";
   list_sep " " (gen_decode_field ctx fields) out fields;
   Printf.fprintf out " ignore orig; Some ({ %s }, at)"
-    ( List.filter_map name_of_field fields
-    |> List.map Ident.snake |> String.concat "; " )
+    (List.filter_map name_of_field fields
+    |> List.map Ident.snake |> String.concat "; ")
 
 (* output_string out " None" *)
 
@@ -413,6 +425,43 @@ let gen_event_struct_field ctx out ident =
 
 let mask_item out (name, _) = Printf.fprintf out "`%s" (Ident.caml name)
 
+let combine_enum_items_with_same_value items =
+  let sorted = List.sort (fun (_, x) (_, y) -> Int64.compare x y) items in
+  assert (items = sorted);
+  let items_rev, last_item_opt =
+    List.fold_left
+      (fun (finished_items, latest_item_accum) item ->
+        match latest_item_accum with
+        | None -> (finished_items, Some item)
+        | Some latest_item_accum ->
+            if snd latest_item_accum = snd item then
+              ( finished_items,
+                Some (fst latest_item_accum ^ "_" ^ fst item, snd item) )
+            else (latest_item_accum :: finished_items, Some item))
+      ([], None) items
+  in
+  let items_rev =
+    match last_item_opt with
+    | Some item -> item :: items_rev
+    | None -> items_rev
+  in
+  List.rev items_rev
+
+let%expect_test "combine_enum_items" =
+  let items =
+    [
+      ("foo", 0L);
+      ("bar", 0L);
+      ("baz", 7L);
+      ("qux", 8L);
+      ("quux", 8L);
+      ("corge", 8L);
+    ]
+  in
+  let combined = combine_enum_items_with_same_value items in
+  print_endline ([%show: (string * int64) list] combined);
+  [%expect {| [("foo_bar", 0L); ("baz", 7L); ("qux_quux_corge", 8L)] |}]
+
 let gen_declaration ctx out = function
   | Type_alias { name; type_ } ->
       Printf.fprintf out "type %s = %a;;\n" (Ident.snake name) (gen_type ctx)
@@ -427,6 +476,7 @@ let gen_declaration ctx out = function
         (Ident.snake ~prefix:"decode" name)
         (Ident.snake name) (gen_decode_fields ctx) fields
   | Enum { name; items } ->
+      let items = combine_enum_items_with_same_value items in
       Printf.fprintf out "type %s = [ %a ];;\n"
         (Ident.snake name ~suffix:"enum")
         (list_sep " | " gen_enum_item)
@@ -468,8 +518,8 @@ let gen_declaration ctx out = function
         (Ident.snake name)
         (list (gen_named_arg ctx))
         fields
-        ( if Option.is_some reply then Ident.snake name ~suffix:"reply"
-        else "unit" )
+        (if Option.is_some reply then Ident.snake name ~suffix:"reply"
+        else "unit")
   | Event_copy { name; event; _ } ->
       Printf.fprintf out "type %s = %a;;"
         (Ident.snake name ~suffix:"event")

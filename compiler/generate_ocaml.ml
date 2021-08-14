@@ -339,51 +339,70 @@ let gen_decode_field_type ctx out = function
   | { ft_type; ft_allowed = None } | { ft_type; ft_allowed = _ } ->
       gen_decode_type ctx out ft_type
 
+let gen_convert_to_mask_or_enum_expr ~prefix ~suffix ~ctx ~name ~type_ out =
+  let gen_decode_mask_expr ~type_ out ident =
+    let to_int = Option.bind (resolve_as_prim ctx type_.ft_type) gen_to_int in
+    let arg_to_decode =
+      match to_int with
+      | Some to_int -> Printf.sprintf "(%s %s)" to_int (Ident.snake name)
+      | None -> Ident.snake name
+    in
+    Printf.fprintf out "(%a %s)"
+      (gen_ident
+         ~process_name:(Ident.snake ~prefix:"decode" ~suffix:"mask")
+         ctx)
+      ident arg_to_decode
+  in
+  let should_generate_prefix_and_suffix =
+    match type_.ft_allowed with
+    | Some (Allowed_mask _)
+    | Some (Allowed_alt_enum _)
+    | Some (Allowed_alt_mask _) ->
+        true
+    | _ -> false
+  in
+  if should_generate_prefix_and_suffix then Printf.fprintf out "%s" prefix;
+  let () =
+    match type_.ft_allowed with
+    | Some (Allowed_mask ident) ->
+        assert should_generate_prefix_and_suffix;
+        gen_decode_mask_expr ~type_ out ident
+    | Some (Allowed_alt_enum ident) ->
+        assert should_generate_prefix_and_suffix;
+        Printf.fprintf out "(match %a %s with | Some e -> E e | None -> T %s) "
+          (gen_ident
+             ~process_name:(fun x -> Ident.snake ~suffix:"enum_of_int" x)
+             ctx)
+          ident (Ident.snake name) (Ident.snake name)
+    | Some (Allowed_alt_mask ident) ->
+        assert should_generate_prefix_and_suffix;
+        Printf.fprintf out "(match %a with | [] -> T %s | es -> E es) "
+          (gen_decode_mask_expr ~type_)
+          ident (Ident.snake name)
+    | Some _ | None -> assert (not should_generate_prefix_and_suffix)
+  in
+  if should_generate_prefix_and_suffix then Printf.fprintf out "%s" suffix
+
 let gen_decode_field ~ctx ~env out = function
   | Field { name; type_ } -> (
       Printf.fprintf out "let* %s, at = %a buf ~at in " (Ident.snake name)
         (gen_decode_field_type ctx)
         type_;
-      match type_.ft_allowed with
-      | Some (Allowed_mask ident (*{ id_module = _; id_name }*)) ->
-          let to_int =
-            Option.bind (resolve_as_prim ctx type_.ft_type) gen_to_int
-          in
-          let arg_to_decode =
-            match to_int with
-            | Some to_int -> Printf.sprintf "(%s %s)" to_int (Ident.snake name)
-            | None -> Ident.snake name
-          in
-          Printf.fprintf out "let %s = %a %s in" (Ident.snake name)
-            (gen_ident
-               ~process_name:(Ident.snake ~prefix:"decode" ~suffix:"mask")
-               ctx)
-            ident arg_to_decode;
-          (* See comment for list cases below: we couldn't use a decoded enum
-             in expressions *)
-          env
-      | Some (Allowed_alt_enum ident) ->
-          Printf.fprintf out
-            "let %s = match %a %s with | Some e -> E e | None -> T %s in "
-            (Ident.snake name)
-            (gen_ident
-               ~process_name:(fun x -> Ident.snake ~suffix:"enum_of_int" x)
-               ctx)
-            ident (Ident.snake name) (Ident.snake name);
-          env
-      | Some _ | None -> (
-          match resolve_as_prim ctx type_.ft_type with
-          | Some prim -> Env.add name prim env
-          | None -> env))
+      gen_convert_to_mask_or_enum_expr
+        ~prefix:(Printf.sprintf "let %s = " (Ident.snake name))
+        ~suffix:" in " ~ctx ~name ~type_ out;
+      match resolve_as_prim ctx type_.ft_type with
+      | Some prim -> Env.add name prim env
+      | None -> env)
   | Field_file_descriptor name ->
-      Printf.fprintf out "let* %s, at = decode_file_descr buf ~at in"
+      Printf.fprintf out "let* %s, at = decode_file_descr buf ~at in "
         (Ident.snake name);
       Env.add name Fd env
   | Field_pad { pad = Pad_bytes n; _ } ->
-      Printf.fprintf out "let at = at + %d in" n;
+      Printf.fprintf out "let at = at + %d in " n;
       env
   | Field_pad { pad = Pad_align n; _ } ->
-      Printf.fprintf out "let at = at + ((at - orig) mod %d) in" n;
+      Printf.fprintf out "let at = at + ((at - orig) mod %d) in " n;
       env
   | Field_list_length { name; type_; expr } ->
       Printf.fprintf out "let* %s, at = %a buf ~at in " (Ident.snake name)
@@ -406,10 +425,16 @@ let gen_decode_field ~ctx ~env out = function
         expr;
       env
   | Field_list_simple { name; type_; length } ->
-      Printf.fprintf out "let* %s, at = decode_list %a %s buf ~at in"
+      Printf.fprintf out "let* %s, at = decode_list %a %s buf ~at in "
         (Ident.snake name)
         (gen_decode_field_type ctx)
         type_ (Ident.snake length);
+      gen_convert_to_mask_or_enum_expr
+        ~prefix:
+          (Printf.sprintf "let %s = List.map (fun %s -> " (Ident.snake name)
+             (Ident.snake name))
+        ~suffix:(Printf.sprintf " ) %s in " (Ident.snake name))
+        ~ctx ~name ~type_ out;
       (* For the list cases, we deliberately don't change the environment.
          This is because it is only needed for generating code for expressions,
          which only contain int-like variables and never lists.
@@ -418,7 +443,7 @@ let gen_decode_field ~ctx ~env out = function
          which would never be used. *)
       env
   | Field_list { name; type_; length = Some expr } ->
-      Printf.fprintf out "let* %s, at = decode_list %a (%a) buf ~at in"
+      Printf.fprintf out "let* %s, at = decode_list %a (%a) buf ~at in "
         (Ident.snake name)
         (gen_decode_field_type ctx)
         type_ (gen_expr ~env) expr;

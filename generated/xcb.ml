@@ -7392,8 +7392,7 @@ module Xinput = struct
 
   type device_time_coord = { time : Xproto.timestamp; axisvalues : int32 list }
 
-  let decode_device_time_coord buf ~at num_axes :
-      (device_time_coord * int) option =
+  let decode_device_time_coord num_axes buf ~at : (device_time_coord * int) option =
     let orig = at in
     let* time, at = Xproto.decode_timestamp buf ~at in
     let* axisvalues, at = decode_list decode_int32 num_axes buf ~at in
@@ -8629,7 +8628,7 @@ module Xinput = struct
     | D16_bits of { data16 : int list }
     | D32_bits of { data32 : int32 list }
 
-  let decode_property_format_variant buf ~at enum num_items :
+  let decode_property_format_variant num_items buf ~at enum :
       (property_format_variant * int) option =
     let decode_8_bits buf ~at : (property_format_variant * int) option =
       let orig = at in
@@ -9087,6 +9086,9 @@ module Xinput = struct
     let* mask_len, at = decode_uint16 buf ~at in
     let mask_len = mask_len in
     let* mask, at = decode_list decode_int32 mask_len buf ~at in
+    let mask =
+      List.map (fun mask -> decode_xi_event_mask_mask (Int32.to_int mask)) mask
+    in
     ignore orig;
     Some ({ deviceid; mask }, at)
 
@@ -9541,6 +9543,11 @@ module Xinput = struct
   let decode_grab_modifier_info buf ~at : (grab_modifier_info * int) option =
     let orig = at in
     let* modifiers, at = decode_int32 buf ~at in
+    let modifiers =
+      match decode_modifier_mask_mask (Int32.to_int modifiers) with
+      | [] -> T modifiers
+      | es -> E es
+    in
     let* status, at =
       decode_enum decode_uint8
         (fun x -> x)

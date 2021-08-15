@@ -131,6 +131,36 @@ let decode_list decode_item len buf ~at =
   in
   loop [] at len
 
+let encode_char buf c = Buffer.add_char buf c
+
+let encode_bool buf b = Buffer.add_char buf (if b then Char.chr 1 else Char.chr 0)
+
+let encode_int8 buf i = Buffer.add_int8 buf i
+
+let encode_int16 buf i = Buffer.add_int16_le buf i
+
+let encode_int32 buf i = Buffer.add_int32_le buf i
+
+let encode_int64 buf i = Buffer.add_int64_le buf i
+
+let encode_file_descr buf fd = Buffer.add_int16_le buf (Obj.magic fd)
+
+let encode_uint8 buf i = Buffer.add_uint8 buf i
+
+let encode_uint16 buf i = Buffer.add_uint16_le buf i
+
+let encode_float buf f = Buffer.add_int64_le buf (Int64.bits_of_float f)
+
+let encode_xid = encode_int16
+
+let encode_to_int encode to_int buf x = encode buf (to_int x)
+
+let encode_list encode_item buf items =
+    List.iter (encode_item buf) items
+
+let encode_alt encode to_int encode_t buf = function
+    | E e -> encode_to_int encode to_int buf e
+    | T t -> encode_t buf t
 |};
   List.map (Xobl_compiler.Elaborate.do_stuff xcbs) xcbs
   |> sort_xcbs

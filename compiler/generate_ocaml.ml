@@ -916,7 +916,13 @@ let gen_declaration ctx out = function
   | Event { name; fields; _ } ->
       Printf.fprintf out "type %s = %a;;"
         (Ident.snake name ~suffix:"event")
-        (gen_fields ctx) fields
+        (gen_fields ctx) fields;
+      gen_decode_fields_list ~ctx ~name ~type_:name ~fields ~toplevel:true out;
+      Printf.fprintf out "let %s buf %a ="
+        (Ident.snake ~prefix:"encode" name)
+        gen_fields_record fields;
+      List.iter (gen_encode_field ~ctx ~fields out) fields;
+      output_string out " ignore buf"
   | Error { name; fields; _ } ->
       Printf.fprintf out "type %s = %a;;"
         (Ident.snake name ~suffix:"error")
